@@ -1,0 +1,227 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { supabase } from "./supabase";
+
+function groupLatestByDriver(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const existing = map.get(r.driver_id);
+    if (!existing) map.set(r.driver_id, r);
+    else {
+      const t1 = new Date(existing.created_at).getTime();
+      const t2 = new Date(r.created_at).getTime();
+      if (t2 > t1) map.set(r.driver_id, r);
+    }
+  }
+  return Array.from(map.values());
+}
+
+export default function AdminLiveMap() {
+  const [latestRows, setLatestRows] = useState([]);
+  const [status, setStatus] = useState("Carregando...");
+  const [driverNames, setDriverNames] = useState({});
+  const nameCacheRef = useRef(new Map());
+  const [driverVehicles, setDriverVehicles] = useState({});
+  const vehicleCacheRef = useRef(new Map());
+  const [deliveries, setDeliveries] = useState([]);
+
+
+
+async function getDriverName(driverId) {
+  const cached = nameCacheRef.current.get(driverId);
+  if (cached) return cached;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("name")
+    .eq("id", driverId)
+    .single();
+
+  const name = !error && data?.name ? data.name : driverId;
+  nameCacheRef.current.set(driverId, name);
+  return name;
+}
+async function getDriverVehicleLabel(driverId) {
+  const cached = vehicleCacheRef.current.get(driverId);
+  if (cached) return cached;
+
+  const { data: link, error: linkErr } = await supabase
+    .from("driver_vehicle")
+    .select("vehicle_id")
+    .eq("driver_id", driverId)
+    .single();
+
+  if (linkErr || !link?.vehicle_id) {
+    const fallback = "—";
+    vehicleCacheRef.current.set(driverId, fallback);
+    return fallback;
+  }
+
+  const { data: v, error: vErr } = await supabase
+    .from("vehicles")
+    .select("name, plate")
+    .eq("id", link.vehicle_id)
+    .single();
+
+  const label =
+    !vErr && v ? `${v.name} — ${v.plate}` : "—";
+
+  vehicleCacheRef.current.set(driverId, label);
+  return label;
+}
+const center = useMemo(() => [-3.1190, -60.0217], []);
+
+  useEffect(() => {
+    let channelLoc;
+    let channelDel;
+
+    async function init() {
+      setStatus("Buscando últimas posições...");
+
+      const { data, error } = await supabase
+        .from("driver_locations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (error) {
+        setStatus("Erro: " + error.message);
+        return;
+      }
+
+      setLatestRows(groupLatestByDriver(data));
+      for (const row of groupLatestByDriver(data)) {
+        getDriverVehicleLabel(row.driver_id).then((label) => {
+          setDriverVehicles((prev) => ({ ...prev, [row.driver_id]: label }));
+        });
+      }
+      for (const row of groupLatestByDriver(data)) {
+        getDriverName(row.driver_id).then((name) => {
+          setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
+        });
+      }   
+      const { data: del, error: delErr } = await supabase
+        .from("deliveries")
+        .select("id, cliente, endereco, status, photo_url, completed_at, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+if (!delErr && del) setDeliveries(del);
+channelDel = supabase
+.channel("realtime-deliveries")
+.on(
+  "postgres_changes",
+  { event: "*", schema: "public", table: "deliveries" },
+  (payload) => {
+    const row = payload.new;
+
+    setDeliveries((prev) => {
+      const idx = prev.findIndex((d) => d.id === row.id);
+      if (idx !== -1) {
+        const copy = [...prev];
+        copy[idx] = row;
+        return copy;
+      }
+      return [row, ...prev];
+    });
+  }
+)
+.subscribe();
+      setStatus("Ao vivo ✅");
+      channelLoc = supabase
+        .channel("realtime-driver-locations")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "driver_locations" },
+          (payload) => {
+            const row = payload.new;
+            getDriverVehicleLabel(row.driver_id).then((label) => {
+              setDriverVehicles((prev) => ({ ...prev, [row.driver_id]: label }));
+            });          
+            setLatestRows((prev) => {
+              const copy = [...prev];
+              const idx = copy.findIndex((x) => x.driver_id === row.driver_id);
+              if (idx === -1) return [row, ...copy];
+              copy[idx] = row;
+              return copy;
+            });
+            getDriverName(row.driver_id).then((name) => {
+              setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
+            });
+            
+          }
+        )
+        .subscribe();
+    }
+
+    init();
+
+    return () => {
+      if (channelLoc) supabase.removeChannel(channelLoc);
+      if (channelDel) supabase.removeChannel(channelDel);
+    };
+    
+  }, []);
+
+  return (
+    <div style={{ fontFamily: "Arial", padding: 16 }}>
+      <h2>Painel Administrativo — Caminhões ao vivo</h2>
+      <p><strong>Entregas carregadas:</strong> {deliveries?.length ?? 0}</p>
+      <p><strong>Status:</strong> {status}</p>
+
+      <div style={{ height: 520, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd" }}>
+        <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+
+          {latestRows.map((r) => (
+            <Marker key={r.driver_id} position={[r.lat, r.lng]}>
+              <Popup>
+                <div>
+                <div><strong>Motorista:</strong> {driverNames[r.driver_id] ?? r.driver_id}</div>
+                <div><strong>Veículo:</strong> {driverVehicles[r.driver_id] ?? "—"}</div>
+                <div><strong>Hora:</strong> {new Date(r.created_at).toLocaleString()}</div>
+                <div><strong>Velocidade:</strong> {r.speed ?? "—"}</div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+      <hr style={{ margin: "16px 0" }} />
+
+<h3>Entregas (últimas 50)</h3>
+
+<div style={{ display: "grid", gap: 10 }}>
+  {deliveries.map((d) => (
+    <div
+      key={d.id}
+      style={{
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        padding: 12,
+      }}
+    >
+      <div><strong>Cliente:</strong> {d.cliente}</div>
+      <div><strong>Endereço:</strong> {d.endereco}</div>
+      <div><strong>Status:</strong> {d.status}</div>
+      <div>
+        <strong>Concluída:</strong>{" "}
+        {d.completed_at ? new Date(d.completed_at).toLocaleString() : "—"}
+      </div>
+
+      {d.photo_url ? (
+        <a href={d.photo_url} target="_blank" rel="noreferrer">
+          Abrir foto
+        </a>
+      ) : (
+        <div style={{ opacity: 0.7 }}>Sem foto</div>
+      )}
+    </div>
+  ))}
+</div>
+    </div>
+  );
+}
