@@ -26,7 +26,72 @@ export default function AdminLiveMap() {
   const [driverVehicles, setDriverVehicles] = useState({});
   const vehicleCacheRef = useRef(new Map());
   const [deliveries, setDeliveries] = useState([]);
+  const [geoMsg, setGeoMsg] = useState("");
+  const [geoBusy, setGeoBusy] = useState(false);
 
+  async function geocodificarPendentes() {
+    setGeoMsg("");
+    setGeoBusy(true);
+  
+    try {
+      // pega entregas sem lat/lng
+      const { data: list, error } = await supabase
+        .from("deliveries")
+        .select("id, endereco")
+        .is("lat", null)
+        .limit(30);
+  
+      if (error) {
+        setGeoMsg("Erro buscando pendentes: " + error.message);
+        return;
+      }
+  
+      if (!list || list.length === 0) {
+        setGeoMsg("✅ Nenhuma entrega pendente para geocodificar.");
+        return;
+      }
+  
+      let ok = 0;
+      let fail = 0;
+  
+      for (const d of list) {
+        // rate limit: 1 req/seg (respeito ao Nominatim)
+        await new Promise((r) => setTimeout(r, 1100));
+  
+        const resp = await fetch(
+          `/.netlify/functions/geocode?q=${encodeURIComponent(d.endereco)}`
+        );
+        const j = await resp.json();
+  
+        if (!resp.ok || !j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
+          fail++;
+          continue;
+        }
+  
+        const { error: upErr } = await supabase
+          .from("deliveries")
+          .update({ lat: j.lat, lng: j.lng })
+          .eq("id", d.id);
+  
+        if (upErr) fail++;
+        else ok++;
+      }
+  
+      setGeoMsg(`✅ Geocodificação finalizada: ${ok} ok, ${fail} falhas.`);
+  
+      // recarrega lista (pra você ver atualizado)
+      const { data: del } = await supabase
+        .from("deliveries")
+        .select("id, cliente, endereco, status, photo_url, completed_at, created_at, lat, lng")
+        .order("created_at", { ascending: false })
+        .limit(50);
+  
+      if (del) setDeliveries(del);
+    } finally {
+      setGeoBusy(false);
+    }
+  }
+  
 
 
 async function getDriverName(driverId) {
@@ -181,6 +246,12 @@ channelDel = supabase
       if (!delErr && del) setDeliveries(del);
     }}
   />
+  <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+  <button onClick={geocodificarPendentes} disabled={geoBusy} style={{ padding: "10px 14px" }}>
+    {geoBusy ? "Geocodificando..." : "Geocodificar endereços (OSM)"}
+  </button>
+  {geoMsg && <span>{geoMsg}</span>}
+</div>
       <div style={{ height: 520, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd" }}>
         <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
           <TileLayer
