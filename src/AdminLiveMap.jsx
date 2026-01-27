@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import { supabase } from "./supabase";
+import ExcelImport from "./ExcelImport";
+
 
 function groupLatestByDriver(rows) {
   const map = new Map();
@@ -168,7 +170,17 @@ channelDel = supabase
       <h2>Painel Administrativo — Caminhões ao vivo</h2>
       <p><strong>Entregas carregadas:</strong> {deliveries?.length ?? 0}</p>
       <p><strong>Status:</strong> {status}</p>
+      <ExcelImport
+    onImported={async () => {
+      const { data: del, error: delErr } = await supabase
+        .from("deliveries")
+        .select("id, cliente, endereco, status, photo_url, completed_at, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
+      if (!delErr && del) setDeliveries(del);
+    }}
+  />
       <div style={{ height: 520, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd" }}>
         <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
           <TileLayer
