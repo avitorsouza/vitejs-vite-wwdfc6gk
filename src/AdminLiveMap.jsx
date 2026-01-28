@@ -28,6 +28,8 @@ export default function AdminLiveMap() {
   const [deliveries, setDeliveries] = useState([]);
   const [geoMsg, setGeoMsg] = useState("");
   const [geoBusy, setGeoBusy] = useState(false);
+  const [geoFails, setGeoFails] = useState([]);
+
 
   async function geocodificarPendentes() {
     setGeoMsg("");
@@ -53,6 +55,8 @@ export default function AdminLiveMap() {
   
       let ok = 0;
       let fail = 0;
+      const fails = [];
+
   
       for (const d of list) {
         try {
@@ -84,8 +88,10 @@ const q = /manaus/i.test(enderecoLimpo)
   
           if (!j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
             fail++;
+            fails.push({ endereco: q });
             continue;
           }
+          
   
           const { error: upErr } = await supabase
             .from("deliveries")
@@ -101,7 +107,7 @@ const q = /manaus/i.test(enderecoLimpo)
           fail++;
         }
       }
-  
+      setGeoFails(fails);
       setGeoMsg(`✅ Geocodificação finalizada: ${ok} ok, ${fail} falhas.`);
     } catch (e) {
       setGeoMsg("❌ Erro inesperado na geocodificação: " + String(e?.message || e));
@@ -273,6 +279,19 @@ channelDel = supabase
             attribution='&copy; OpenStreetMap contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+  {geoFails.length > 0 && (
+    <div style={{ marginTop: 10, padding: 10, border: "1px solid #eee", borderRadius: 10 }}>
+      <strong>Falharam ({geoFails.length}):</strong>
+      <ul>
+        {geoFails.map((f, i) => (
+          <li key={i}>{f.endereco}</li>
+        ))}
+      </ul>
+      <div style={{ fontSize: 13, opacity: 0.8 }}>
+        Dica: acrescente número, bairro e “Manaus - AM, Brasil”.
+      </div>
+    </div>
+  )}
 
           {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>

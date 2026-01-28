@@ -6,7 +6,7 @@ exports.handler = async (event) => {
     }
 
     const url =
-      "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+      "https://nominatim.openstreetmap.org/search?format=json&limit=3&q=" +
       encodeURIComponent(q);
 
     const resp = await fetch(url, {
@@ -21,15 +21,18 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: JSON.stringify({ found: false }) };
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        found: true,
-        lat: Number(data[0].lat),
-        lng: Number(data[0].lon),
-      }),
-    };
-  } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: String(e) }) };
-  }
+    const pick =
+  data.find((x) => x.address?.city?.toLowerCase() === "manaus") ||
+  data.find((x) => (x.address?.state || "").toLowerCase().includes("amazon")) ||
+  data[0];
+
+return {
+  statusCode: 200,
+  body: JSON.stringify({
+    found: true,
+    lat: Number(pick.lat),
+    lng: Number(pick.lon),
+    display_name: pick.display_name,
+  }),
 };
+
