@@ -34,7 +34,7 @@ export default function AdminLiveMap() {
     setGeoBusy(true);
   
     try {
-      // pega entregas sem lat/lng
+      // 1) pega entregas sem lat/lng
       const { data: list, error } = await supabase
         .from("deliveries")
         .select("id, endereco")
@@ -55,45 +55,58 @@ export default function AdminLiveMap() {
       let fail = 0;
   
       for (const d of list) {
-        // rate limit: 1 req/seg (respeito ao Nominatim)
-        await new Promise((r) => setTimeout(r, 1100));
+        try {
+          // rate limit (respeito ao Nominatim)
+          await new Promise((r) => setTimeout(r, 1100));
   
-        const resp = await fetch(
-          `/.netlify/functions/geocode?q=${encodeURIComponent(d.endereco)}`
-        );
-        const j = await resp.json();
+          const enderecoLimpo = String(d.endereco || "")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const q = /manaus/i.test(enderecoLimpo)
+  ? enderecoLimpo
+  : `${enderecoLimpo}, Manaus - AM, Brasil`;
+
+const url = `/.netlify/functions/geocode?q=${encodeURIComponent(q)}`;
+const resp = await fetch(url);
+
   
-        if (!resp.ok || !j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
+          // Se a function não existe / deu erro, pare e mostre
+          if (!resp.ok) {
+            const txt = await resp.text();
+            setGeoMsg(`❌ Erro na função geocode (HTTP ${resp.status}). Exemplo: ${txt.slice(0, 120)}...`);
+            return;
+          }
+  
+          const j = await resp.json();
+  
+          if (!j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
+            fail++;
+            continue;
+          }
+  
+          const { error: upErr } = await supabase
+            .from("deliveries")
+            .update({ lat: j.lat, lng: j.lng })
+            .eq("id", d.id);
+  
+          if (upErr) {
+            fail++;
+          } else {
+            ok++;
+          }
+        } catch (e) {
           fail++;
-          continue;
         }
-  
-        const { error: upErr } = await supabase
-          .from("deliveries")
-          .update({ lat: j.lat, lng: j.lng })
-          .eq("id", d.id);
-  
-        if (upErr) fail++;
-        else ok++;
       }
   
       setGeoMsg(`✅ Geocodificação finalizada: ${ok} ok, ${fail} falhas.`);
-  
-      // recarrega lista (pra você ver atualizado)
-      const { data: del } = await supabase
-        .from("deliveries")
-        .select("id, cliente, endereco, status, photo_url, completed_at, created_at, lat, lng")
-        .order("created_at", { ascending: false })
-        .limit(50);
-  
-      if (del) setDeliveries(del);
+    } catch (e) {
+      setGeoMsg("❌ Erro inesperado na geocodificação: " + String(e?.message || e));
     } finally {
       setGeoBusy(false);
     }
   }
-  
-
-
 async function getDriverName(driverId) {
   const cached = nameCacheRef.current.get(driverId);
   if (cached) return cached;
