@@ -67,8 +67,10 @@ const q = /manaus/i.test(enderecoLimpo)
   ? enderecoLimpo
   : `${enderecoLimpo}, Manaus - AM, Brasil`;
 
-const url = `/.netlify/functions/geocode?q=${encodeURIComponent(q)}`;
-const resp = await fetch(url);
+  const base = import.meta.env.VITE_FUNCTIONS_BASE || "";
+  const url = `${base}/.netlify/functions/geocode?q=${encodeURIComponent(q)}`;
+
+  const resp = await fetch(url);
 
   
           // Se a function não existe / deu erro, pare e mostre
