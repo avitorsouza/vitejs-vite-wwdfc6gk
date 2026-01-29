@@ -58,7 +58,7 @@ export default function ExcelImport({ onImported }) {
 
 
       if (deliveries.length === 0) {
-        setMsg("Nenhuma linha válida encontrada. Confirme as colunas: nome_cliente, rua, numero, bairro (cidade/estado opcionais).");
+        setMsg("Nenhuma linha válida encontrada. Confirme as colunas: Nome do cliente, rua, numero, bairro (cidade/estado opcionais).");
         return;
       }
 
@@ -81,7 +81,7 @@ export default function ExcelImport({ onImported }) {
     <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
       <h3>Importar entregas (Excel)</h3>
       <p style={{ marginTop: 6, opacity: 0.8 }}>
-      Colunas mínimas: <strong>nome_cliente</strong>, <strong>rua</strong>, <strong>numero</strong>, <strong>bairro</strong>
+      Colunas mínimas: <strong>nome do cliente</strong>, <strong>rua</strong>, <strong>numero</strong>, <strong>bairro</strong>
 
       </p>
 

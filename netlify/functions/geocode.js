@@ -5,9 +5,11 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: "q obrigatório" }) };
     }
 
-    const url =
-      "https://nominatim.openstreetmap.org/search?format=json&limit=3&q=" +
-      encodeURIComponent(q);
+    const pick =
+  data.find((x) => x.address?.city?.toLowerCase() === "manaus") ||
+  data.find((x) => (x.address?.state || "").toLowerCase().includes("amazon")) ||
+  data[0];
+
 
     const resp = await fetch(url, {
       headers: {

@@ -38,10 +38,11 @@ export default function AdminLiveMap() {
     try {
       // 1) pega entregas sem lat/lng
       const { data: list, error } = await supabase
-        .from("deliveries")
-        .select("id, endereco_completo")
-        .is("lat", null)
-        .limit(30);
+  .from("deliveries")
+  .select("id, rua, numero, bairro, cidade, estado, endereco_completo")
+  .is("lat", null)
+  .limit(30);
+
   
       if (error) {
         setGeoMsg("Erro buscando pendentes: " + error.message);
