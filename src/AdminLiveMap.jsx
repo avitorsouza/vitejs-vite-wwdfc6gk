@@ -53,24 +53,47 @@ export default function AdminLiveMap() {
         setGeoMsg("✅ Nenhuma entrega pendente para geocodificar.");
         return;
       }
-  
+      // 🔎 filtra apenas entregas com dados mínimos para geocodificar
+const valid = list.filter(
+  (d) =>
+    (d.endereco_completo && String(d.endereco_completo).trim()) ||
+    (d.rua && d.numero && d.bairro)
+);
+
+if (valid.length === 0) {
+  setGeoMsg(
+    "Nenhuma entrega tem dados suficientes (rua + número + bairro ou endereco_completo)."
+  );
+  return;
+}
+
       let ok = 0;
       let fail = 0;
       const fails = [];
 
   
-      for (const d of list) {
+      for (const d of valid) {
         try {
           // rate limit (respeito ao Nominatim)
           await new Promise((r) => setTimeout(r, 1100));
   
-          const enderecoLimpo = String(d.endereco || "")
-  .replace(/\s+/g, " ")
-  .trim();
+          const rua = String(d.rua || "").trim();
+const numero = String(d.numero || "").trim();
+const bairro = String(d.bairro || "").trim();
+const cidade = String(d.cidade || "Manaus").trim() || "Manaus";
+const estado = String(d.estado || "AM").trim() || "AM";
 
-const q = /manaus/i.test(enderecoLimpo)
-  ? enderecoLimpo
-  : `${enderecoLimpo}, Manaus - AM, Brasil`;
+// se já tiver endereco_completo, usa ele; senão monta na hora
+let qBase = String(d.endereco_completo || "").trim();
+
+if (!qBase) {
+  qBase = [rua, numero, bairro, `${cidade} - ${estado}`, "Brasil"]
+    .filter(Boolean)
+    .join(", ");
+}
+
+const q = qBase.replace(/\s+/g, " ").trim();
+
 
   const base = import.meta.env.VITE_FUNCTIONS_BASE || "";
   const url = `${base}/.netlify/functions/geocode?q=${encodeURIComponent(q)}`;
