@@ -38,19 +38,20 @@ export default function ExcelImport({ onImported }) {
       .filter(Boolean)
       .join(", ");
 
-    return {
-      pedido,
-      cliente,
-      rua: rua || null,
-      numero: numero || null,
-      bairro: bairro || null,
-      cidade,
-      estado,
-      endereco_completo,
-      telefone,
-      observacoes,
-      status: "pendente",
-    };
+      return {
+        pedido,
+        cliente,
+        rua: rua || null,
+        numero: numero || null,
+        bairro: bairro || null,
+        cidade,
+        estado,
+        endereco_completo,
+        telefone,
+        observacoes,
+        status: "pendente",
+      };
+      
   })
   // regras mínimas: cliente + rua + numero + bairro
   .filter((d) => d.cliente && d.rua && d.numero && d.bairro);

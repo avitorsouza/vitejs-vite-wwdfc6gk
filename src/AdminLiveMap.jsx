@@ -321,8 +321,9 @@ channelDel = supabase
         padding: 12,
       }}
     >
+      <div><strong>Pedido:</strong> {d.pedido}</div>
       <div><strong>Cliente:</strong> {d.cliente}</div>
-      <div><strong>Endereço:</strong> {d.endereco}</div>
+      <div><strong>Endereço:</strong> {d.endereco_completo}</div>
       <div><strong>Status:</strong> {d.status}</div>
       <div>
         <strong>Concluída:</strong>{" "}
