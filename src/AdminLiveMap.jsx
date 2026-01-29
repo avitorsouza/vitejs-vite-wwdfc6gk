@@ -93,10 +93,12 @@ if (!qBase) {
 }
 
 const q = qBase.replace(/\s+/g, " ").trim();
+const qFinal = /manaus/i.test(q) ? q : `${q}, Manaus - AM, Brasil`;
+
 
 
   const base = import.meta.env.VITE_FUNCTIONS_BASE || "";
-  const url = `${base}/.netlify/functions/geocode?q=${encodeURIComponent(q)}`;
+  const url = `${base}/.netlify/functions/geocode?q=${encodeURIComponent(qFinal)}`;
 
   const resp = await fetch(url);
 
@@ -112,7 +114,8 @@ const q = qBase.replace(/\s+/g, " ").trim();
   
           if (!j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
             fail++;
-            fails.push({ endereco: q });
+            fails.push({ endereco: qFinal });
+
             continue;
           }
           
@@ -297,13 +300,7 @@ channelDel = supabase
   </button>
   {geoMsg && <span>{geoMsg}</span>}
 </div>
-      <div style={{ height: 520, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd" }}>
-        <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
-          <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-  {geoFails.length > 0 && (
+{geoFails.length > 0 && (
     <div style={{ marginTop: 10, padding: 10, border: "1px solid #eee", borderRadius: 10 }}>
       <strong>Falharam ({geoFails.length}):</strong>
       <ul>
@@ -316,8 +313,13 @@ channelDel = supabase
       </div>
     </div>
   )}
-
-          {latestRows.map((r) => (
+      <div style={{ height: 520, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd" }}>
+        <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+            {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>
               <Popup>
                 <div>
