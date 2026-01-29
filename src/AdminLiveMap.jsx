@@ -39,7 +39,7 @@ export default function AdminLiveMap() {
       // 1) pega entregas sem lat/lng
       const { data: list, error } = await supabase
         .from("deliveries")
-        .select("id, endereco")
+        .select("id, endereco_completo")
         .is("lat", null)
         .limit(30);
   
