@@ -190,7 +190,7 @@ const center = useMemo(() => [-3.1190, -60.0217], []);
       }   
       const { data: del, error: delErr } = await supabase
         .from("deliveries")
-        .select("id, cliente, endereco_completo, status, photo_url, completed_at, created_at")
+        .select("id, cliente, endereco_completo, pedido, status, photo_url, completed_at, created_at")
         .order("created_at", { ascending: false })
         .limit(50);
 
