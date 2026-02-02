@@ -6,6 +6,7 @@ function wazeUrlFromLatLng(lat, lng) {
   return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
 }
 export default function DriverTracker() {
+  const [currentStop, setCurrentStop] = useState(null);
   const [stops, setStops] = useState([]);
   const [stopsMsg, setStopsMsg] = useState("Carregando entregas...");
   const [status, setStatus] = useState("Parado");
@@ -176,6 +177,8 @@ export default function DriverTracker() {
       }
   
       setStops(data || []);
+      const first = (data || [])[0] || null;
+      setCurrentStop(first);
       setStopsMsg(data?.length ? "" : "Nenhuma entrega pendente encontrada.");
     }
   
@@ -185,8 +188,50 @@ export default function DriverTracker() {
       alive = false;
     };
   }, []);
+  async function reloadStops() {
+    setStopsMsg("Carregando entregas...");
+    const { data, error } = await supabase
+      .from("deliveries")
+      .select("id, pedido, cliente, endereco_completo, lat, lng, status")
+      .eq("status", "pendente")
+      .not("lat", "is", null)
+      .not("lng", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(50);
   
-
+    if (error) {
+      setStopsMsg("Erro ao carregar entregas: " + error.message);
+      setStops([]);
+      setCurrentStop(null);
+      return;
+    }
+  
+    setStops(data || []);
+    setStopsMsg(data?.length ? "" : "Nenhuma entrega pendente encontrada.");
+    setCurrentStop((data || [])[0] || null);
+  }
+  
+  function openNextInWaze() {
+    if (!currentStop) return;
+    window.open(wazeUrlFromLatLng(currentStop.lat, currentStop.lng), "_blank");
+  }
+  
+  async function concluirEntregaAtual() {
+    if (!currentStop) return;
+  
+    const { error } = await supabase
+      .from("deliveries")
+      .update({ status: "entregue", completed_at: new Date().toISOString() })
+      .eq("id", currentStop.id);
+  
+    if (error) {
+      setStopsMsg("Erro ao concluir entrega: " + error.message);
+      return;
+    }
+  
+    await reloadStops();
+  }
+  
   return (
     <div style={{ fontFamily: "Arial", padding: 16, maxWidth: 520 }}>
       <h2>Motorista — Rastreamento</h2>
@@ -198,6 +243,37 @@ export default function DriverTracker() {
         <button onClick={stopTracking} style={{ padding: "10px 14px" }}>
           Parar
         </button>
+        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+  <button
+    style={{ padding: "10px 14px", fontWeight: 700 }}
+    disabled={!currentStop}
+    onClick={openNextInWaze}
+  >
+    Ir para a próxima (Waze)
+  </button>
+
+  <button
+    style={{ padding: "10px 14px" }}
+    disabled={!currentStop}
+    onClick={concluirEntregaAtual}
+  >
+    Concluir entrega atual
+  </button>
+
+  <button style={{ padding: "10px 14px" }} onClick={reloadStops}>
+    Recarregar lista
+  </button>
+</div>
+
+{currentStop && (
+  <div style={{ marginTop: 10, padding: 12, border: "1px solid #eee", borderRadius: 12 }}>
+    <div style={{ fontWeight: 700 }}>Entrega atual</div>
+    <div><strong>Pedido:</strong> {currentStop.pedido ?? "—"}</div>
+    <div><strong>Cliente:</strong> {currentStop.cliente ?? "—"}</div>
+    <div><strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}</div>
+  </div>
+)}
+      
         <div style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
   <h3>Entregas do dia</h3>
 
