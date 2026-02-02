@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 
+function wazeUrlFromLatLng(lat, lng) {
+  // Abre o Waze diretamente navegando para coordenadas
+  return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+}
 export default function DriverTracker() {
+  const [stops, setStops] = useState([]);
+  const [stopsMsg, setStopsMsg] = useState("Carregando entregas...");
   const [status, setStatus] = useState("Parado");
   const [lastSent, setLastSent] = useState(null);
   const watchIdRef = useRef(null);
@@ -147,6 +153,39 @@ export default function DriverTracker() {
   }
   
   useEffect(() => () => stopTracking(), []);
+  useEffect(() => {
+    let alive = true;
+  
+    async function loadStops() {
+      setStopsMsg("Carregando entregas...");
+      const { data, error } = await supabase
+        .from("deliveries")
+        .select("id, pedido, cliente, endereco_completo, lat, lng, status")
+        .eq("status", "pendente")
+        .not("lat", "is", null)
+        .not("lng", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(50);
+  
+      if (!alive) return;
+  
+      if (error) {
+        setStopsMsg("Erro ao carregar entregas: " + error.message);
+        setStops([]);
+        return;
+      }
+  
+      setStops(data || []);
+      setStopsMsg(data?.length ? "" : "Nenhuma entrega pendente encontrada.");
+    }
+  
+    loadStops();
+  
+    return () => {
+      alive = false;
+    };
+  }, []);
+  
 
   return (
     <div style={{ fontFamily: "Arial", padding: 16, maxWidth: 520 }}>
@@ -159,6 +198,32 @@ export default function DriverTracker() {
         <button onClick={stopTracking} style={{ padding: "10px 14px" }}>
           Parar
         </button>
+        <div style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+  <h3>Entregas do dia</h3>
+
+  {stopsMsg && <p>{stopsMsg}</p>}
+
+  {stops.length > 0 && (
+    <div style={{ display: "grid", gap: 10 }}>
+      {stops.map((s, idx) => (
+        <div key={s.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontWeight: 700 }}>Parada {idx + 1}</div>
+          <div><strong>Pedido:</strong> {s.pedido ?? "—"}</div>
+          <div><strong>Cliente:</strong> {s.cliente ?? "—"}</div>
+          <div><strong>Endereço:</strong> {s.endereco_completo ?? "—"}</div>
+
+          <button
+            style={{ marginTop: 10, padding: "10px 14px" }}
+            onClick={() => window.open(wazeUrlFromLatLng(s.lat, s.lng), "_blank")}
+          >
+            Abrir no Waze
+          </button>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
       </div>
 
       <p style={{ marginTop: 12 }}>
