@@ -233,7 +233,17 @@ export default function DriverTracker() {
   }
   
   return (
-    <div style={{ fontFamily: "Arial", padding: 16, maxWidth: 520 }}>
+    <div
+      style={{
+        fontFamily: "Arial",
+        padding: 12,
+        width: "100%",
+        maxWidth: 520,
+        margin: "0 auto",
+        boxSizing: "border-box",
+        overflowX: "hidden",
+      }}
+    >
       <h2>Motorista — Rastreamento</h2>
 
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
@@ -243,9 +253,19 @@ export default function DriverTracker() {
         <button onClick={stopTracking} style={{ padding: "10px 14px" }}>
           Parar
         </button>
-        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-  <button
-    style={{ padding: "10px 14px", fontWeight: 700 }}
+        <div
+  style={{
+    marginTop: 12,
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: 10,
+  }}
+>
+
+<button
+  style={{ padding: "12px 14px", width: "100%", borderRadius: 12 }}
+
+  
     disabled={!currentStop}
     onClick={openNextInWaze}
   >
@@ -260,13 +280,25 @@ export default function DriverTracker() {
     Concluir entrega atual
   </button>
 
-  <button style={{ padding: "10px 14px" }} onClick={reloadStops}>
+  <button style={{ padding: "12px 14px", width: "100%", borderRadius: 12 }} onClick={reloadStops}>
+
     Recarregar lista
   </button>
 </div>
 
 {currentStop && (
-  <div style={{ marginTop: 10, padding: 12, border: "1px solid #eee", borderRadius: 12 }}>
+  <div
+  style={{
+    marginTop: 10,
+    padding: 12,
+    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    background: "#fff",
+    boxSizing: "border-box",
+    wordBreak: "break-word",
+  }}
+>
+
     <div style={{ fontWeight: 700 }}>Entrega atual</div>
     <div><strong>Pedido:</strong> {currentStop.pedido ?? "—"}</div>
     <div><strong>Cliente:</strong> {currentStop.cliente ?? "—"}</div>
@@ -280,9 +312,21 @@ export default function DriverTracker() {
   {stopsMsg && <p>{stopsMsg}</p>}
 
   {stops.length > 0 && (
-    <div style={{ display: "grid", gap: 10 }}>
+    <div style={{ display: "grid", gap: 10, width: "100%" }}>
+
       {stops.map((s, idx) => (
-        <div key={s.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+        <div
+        key={s.id}
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 14,
+          padding: 12,
+          background: "#fff",
+          boxSizing: "border-box",
+          wordBreak: "break-word",
+        }}
+      >
+      
           <div style={{ fontWeight: 700 }}>Parada {idx + 1}</div>
           <div><strong>Pedido:</strong> {s.pedido ?? "—"}</div>
           <div><strong>Cliente:</strong> {s.cliente ?? "—"}</div>
