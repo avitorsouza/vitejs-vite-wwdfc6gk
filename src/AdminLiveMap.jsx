@@ -29,6 +29,11 @@ export default function AdminLiveMap() {
   const [geoMsg, setGeoMsg] = useState("");
   const [geoBusy, setGeoBusy] = useState(false);
   const [geoFails, setGeoFails] = useState([]);
+  const [routeBusy, setRouteBusy] = useState(false);
+const [routeMsg, setRouteMsg] = useState("");
+const [vehicles, setVehicles] = useState([]);
+const [selectedVehicleId, setSelectedVehicleId] = useState("");
+
 
 
   async function geocodificarPendentes() {
@@ -98,7 +103,8 @@ const qFinal = /manaus/i.test(q) ? q : `${q}, Manaus - AM, Brasil`;
 
 
   const base = import.meta.env.VITE_FUNCTIONS_BASE || "";
-  const url = `${base}/.netlify/functions/geocode?q=${encodeURIComponent(qFinal)}`;
+  const url = `/api/geocode?q=${encodeURIComponent(qFinal)}`;
+
 
   const resp = await fetch(url);
 
@@ -110,7 +116,21 @@ const qFinal = /manaus/i.test(q) ? q : `${q}, Manaus - AM, Brasil`;
             return;
           }
   
-          const j = await resp.json();
+          const raw = await resp.text();
+let j = null;
+
+try {
+  j = raw ? JSON.parse(raw) : null;
+} catch (e) {
+  setRouteMsg(`❌ Resposta não-JSON do servidor (HTTP ${resp.status}). Exemplo: ${raw.slice(0, 160)}...`);
+  return;
+}
+
+if (!j) {
+  setRouteMsg(`❌ Resposta vazia do servidor (HTTP ${resp.status}).`);
+  return;
+}
+
   
           if (!j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
             fail++;
@@ -242,6 +262,17 @@ channelDel = supabase
   }
 )
 .subscribe();
+// carregar veículos para gerar rota
+const { data: vs, error: vsErr } = await supabase
+  .from("vehicles")
+  .select("id, name, plate")
+  .order("name", { ascending: true });
+
+if (!vsErr && vs) {
+  setVehicles(vs);
+  if (vs[0]?.id) setSelectedVehicleId(vs[0].id);
+}
+
       setStatus("Ao vivo ✅");
       channelLoc = supabase
         .channel("realtime-driver-locations")
@@ -277,6 +308,86 @@ channelDel = supabase
     };
     
   }, []);
+async function gerarRotaOtimizada() {
+  try {
+    setRouteMsg("");
+    setRouteBusy(true);
+
+    if (!selectedVehicleId) {
+      setRouteMsg("Selecione um veículo.");
+      return;
+    }
+
+    // 1) pegar entregas pendentes com lat/lng
+    const { data: pend, error: pendErr } = await supabase
+      .from("deliveries")
+      .select("id, pedido, cliente, endereco_completo, lat, lng, status")
+      .eq("status", "pendente")
+      .not("lat", "is", null)
+      .not("lng", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(20);
+
+    if (pendErr) {
+      setRouteMsg("Erro buscando entregas: " + pendErr.message);
+      return;
+    }
+    if (!pend || pend.length < 2) {
+      setRouteMsg("Precisa de pelo menos 2 entregas pendentes geocodificadas.");
+      return;
+    }
+
+    // 2) chamar API do servidor para otimizar
+    const depot = { lat: -3.1190, lng: -60.0217 }; // centro aproximado (depois refinamos para o endereço exato)
+    const stops = pend.map(d => ({ id: d.id, lat: d.lat, lng: d.lng }));
+
+    const resp = await fetch("/api/optimize-route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ depot, stops }),
+    });
+
+    const j = await resp.json();
+    if (!j?.ok) {
+      setRouteMsg("Falha ao otimizar: " + (j?.status || "erro"));
+      return;
+    }
+
+    // 3) criar rota no banco
+    const depotAddress = "Av. Tefé, 2840 - Japiim, Manaus - AM";
+    const { data: routeRow, error: rErr } = await supabase
+      .from("routes")
+      .insert([{ vehicle_id: selectedVehicleId, depot_address: depotAddress }])
+      .select("*")
+      .single();
+
+    if (rErr || !routeRow?.id) {
+      setRouteMsg("Erro criando rota: " + (rErr?.message || "desconhecido"));
+      return;
+    }
+
+    // 4) inserir paradas ordenadas
+    const stopsRows = j.ordered.map((s) => ({
+      route_id: routeRow.id,
+      delivery_id: s.id,
+      stop_order: s.stop_order,
+      eta_seconds: s.eta_seconds ?? null,
+      leg_seconds: s.leg_seconds ?? null,
+    }));
+
+    const { error: sErr } = await supabase.from("route_stops").insert(stopsRows);
+    if (sErr) {
+      setRouteMsg("Erro salvando paradas: " + sErr.message);
+      return;
+    }
+
+    setRouteMsg(`✅ Rota criada e otimizada! (${stopsRows.length} paradas)`);
+  } catch (e) {
+    setRouteMsg("Erro inesperado: " + String(e?.message || e));
+  } finally {
+    setRouteBusy(false);
+  }
+}
 
   return (
     <div style={{ fontFamily: "Arial", padding: 16 }}>
@@ -294,6 +405,37 @@ channelDel = supabase
       if (!delErr && del) setDeliveries(del);
     }}
   />
+  <div style={{ marginTop: 10, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
+  <h3>Gerar rota (otimizada)</h3>
+
+  <div style={{ display: "grid", gap: 10 }}>
+    <label>
+      <div style={{ fontSize: 13, opacity: 0.8 }}>Veículo</div>
+      <select
+        value={selectedVehicleId}
+        onChange={(e) => setSelectedVehicleId(e.target.value)}
+        style={{ width: "100%", padding: 10, borderRadius: 10 }}
+      >
+        {vehicles.map((v) => (
+          <option key={v.id} value={v.id}>
+            {v.name} — {v.plate}
+          </option>
+        ))}
+      </select>
+    </label>
+
+    <button
+      onClick={gerarRotaOtimizada}
+      disabled={routeBusy}
+      style={{ padding: "12px 14px", borderRadius: 12, fontWeight: 700 }}
+    >
+      {routeBusy ? "Gerando rota..." : "Gerar rota otimizada (Google)"}
+    </button>
+
+    {routeMsg && <div>{routeMsg}</div>}
+  </div>
+</div>
+
   <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
   <button onClick={geocodificarPendentes} disabled={geoBusy} style={{ padding: "10px 14px" }}>
     {geoBusy ? "Geocodificando..." : "Geocodificar endereços (OSM)"}

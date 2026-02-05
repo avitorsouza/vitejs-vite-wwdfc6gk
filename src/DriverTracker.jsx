@@ -6,6 +6,8 @@ function wazeUrlFromLatLng(lat, lng) {
   return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
 }
 export default function DriverTracker() {
+  const [tracking, setTracking] = useState(false);
+  const [user, setUser] = useState(null);
   const [currentStop, setCurrentStop] = useState(null);
   const [stops, setStops] = useState([]);
   const [stopsMsg, setStopsMsg] = useState("Carregando entregas...");
@@ -155,49 +157,178 @@ export default function DriverTracker() {
   
   useEffect(() => () => stopTracking(), []);
   useEffect(() => {
-    let alive = true;
-  
-    async function loadStops() {
-      setStopsMsg("Carregando entregas...");
-      const { data, error } = await supabase
-        .from("deliveries")
-        .select("id, pedido, cliente, endereco_completo, lat, lng, status")
-        .eq("status", "pendente")
-        .not("lat", "is", null)
-        .not("lng", "is", null)
-        .order("created_at", { ascending: true })
-        .limit(50);
-  
-      if (!alive) return;
-  
-      if (error) {
-        setStopsMsg("Erro ao carregar entregas: " + error.message);
-        setStops([]);
-        return;
-      }
-  
-      setStops(data || []);
-      const first = (data || [])[0] || null;
-      setCurrentStop(first);
-      setStopsMsg(data?.length ? "" : "Nenhuma entrega pendente encontrada.");
+  let alive = true;
+
+  async function loadAuth() {
+    const { data: sess } = await supabase.auth.getSession();
+    if (!alive) return;
+    setUser(sess?.session?.user || null);
+  }
+
+  loadAuth();
+
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user || null);
+  });
+
+  return () => {
+    alive = false;
+    sub?.subscription?.unsubscribe?.();
+  };
+}, []);
+
+useEffect(() => {
+  let alive = true;
+
+  async function loadStops() {
+    if (!user?.id) {
+      setStopsMsg("Carregando usuário...");
+      return;
     }
-  
-    loadStops();
-  
-    return () => {
-      alive = false;
-    };
-  }, []);
-  async function reloadStops() {
+
     setStopsMsg("Carregando entregas...");
+
+    // 1) descobrir veículo do motorista logado
+    const { data: link, error: linkErr } = await supabase
+      .from("driver_vehicle")
+      .select("vehicle_id")
+      .eq("driver_id", user.id)
+      .single();
+
+    if (linkErr || !link?.vehicle_id) {
+      setStopsMsg("Seu usuário não está vinculado a um veículo.");
+      setStops([]);
+      setCurrentStop(null);
+      return;
+    }
+
+    // 2) pegar a rota ativa
+    const { data: r, error: rErr } = await supabase
+      .from("routes")
+      .select("id")
+      .eq("vehicle_id", link.vehicle_id)
+      .eq("status", "ativa")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (rErr || !r?.id) {
+      setStopsMsg("Nenhuma rota ativa encontrada.");
+      setStops([]);
+      setCurrentStop(null);
+      return;
+    }
+
+    // 3) buscar paradas
     const { data, error } = await supabase
-      .from("deliveries")
-      .select("id, pedido, cliente, endereco_completo, lat, lng, status")
-      .eq("status", "pendente")
-      .not("lat", "is", null)
-      .not("lng", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(50);
+      .from("route_stops")
+      .select(`
+        stop_order,
+        deliveries:delivery_id (
+          id, pedido, cliente, endereco_completo, lat, lng, status
+        )
+      `)
+      .eq("route_id", r.id)
+      .order("stop_order", { ascending: true });
+
+    if (!alive) return;
+
+    if (error) {
+      setStopsMsg("Erro ao carregar rota: " + error.message);
+      setStops([]);
+      setCurrentStop(null);
+      return;
+    }
+
+    const stopsList = (data || [])
+      .map((x) => ({
+        ...x.deliveries,
+        stop_order: x.stop_order,
+      }))
+      .filter((d) => d?.status === "pendente");
+
+    setStops(stopsList);
+    setCurrentStop(stopsList[0] || null);
+    setStopsMsg(stopsList.length ? "" : "Nenhuma entrega pendente.");
+  }
+
+  loadStops();
+
+  return () => {
+    alive = false;
+  };
+
+}, [user]);
+async function reloadStops() {
+    // 1) descobrir veículo do motorista logado
+const {
+  data: link,
+  error: linkErr,
+} = await supabase
+  .from("driver_vehicle")
+  .select("vehicle_id")
+  .eq("driver_id", user.id)
+  .single();
+
+if (linkErr || !link?.vehicle_id) {
+  setStopsMsg("Seu usuário não está vinculado a um veículo.");
+  setStops([]);
+  setCurrentStop(null);
+  return;
+}
+
+// 2) pegar a rota ativa desse veículo (mais recente)
+const { data: r, error: rErr } = await supabase
+  .from("routes")
+  .select("id, status, created_at")
+  .eq("vehicle_id", link.vehicle_id)
+  .eq("status", "ativa")
+  .order("created_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+if (rErr || !r?.id) {
+  setStopsMsg("Nenhuma rota ativa encontrada para seu veículo.");
+  setStops([]);
+  setCurrentStop(null);
+  return;
+}
+
+// 3) buscar paradas ordenadas + entrega vinculada
+const { data, error } = await supabase
+  .from("route_stops")
+  .select(`
+    stop_order,
+    eta_seconds,
+    leg_seconds,
+    deliveries:delivery_id (
+      id, pedido, cliente, endereco_completo, lat, lng, status
+    )
+  `)
+  .eq("route_id", r.id)
+  .order("stop_order", { ascending: true });
+
+if (error) {
+  setStopsMsg("Erro ao carregar rota: " + error.message);
+  setStops([]);
+  setCurrentStop(null);
+  return;
+}
+
+// 4) transformar no formato do driver e filtrar só pendentes
+const stopsList = (data || [])
+  .map((x) => ({
+    ...x.deliveries,
+    stop_order: x.stop_order,
+    eta_seconds: x.eta_seconds,
+    leg_seconds: x.leg_seconds,
+  }))
+  .filter((d) => d?.status === "pendente" && Number.isFinite(d.lat) && Number.isFinite(d.lng));
+
+setStops(stopsList);
+setStopsMsg(stopsList.length ? "" : "Nenhuma parada pendente na rota.");
+setCurrentStop(stopsList[0] || null);
+
   
     if (error) {
       setStopsMsg("Erro ao carregar entregas: " + error.message);
