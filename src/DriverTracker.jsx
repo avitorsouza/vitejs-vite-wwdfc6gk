@@ -272,6 +272,13 @@ useEffect(() => {
 
 }, [user]);
 async function reloadStops() {
+    if (!user?.id) {
+    setStopsMsg("Carregando usuário...");
+    setStops([]);
+    setCurrentStop(null);
+    return null;
+  }
+
   setStopsMsg("Carregando entregas...");
 
   // 1) descobrir veículo do motorista logado
