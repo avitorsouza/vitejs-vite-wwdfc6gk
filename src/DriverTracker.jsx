@@ -6,6 +6,7 @@ function wazeUrlFromLatLng(lat, lng) {
   return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
 }
 export default function DriverTracker() {
+  const [isWide, setIsWide] = useState(window.innerWidth >= 900);
   const [tracking, setTracking] = useState(false);
   const [user, setUser] = useState(null);
   const [currentStop, setCurrentStop] = useState(null);
@@ -156,6 +157,14 @@ export default function DriverTracker() {
   }
   
   useEffect(() => () => stopTracking(), []);
+  useEffect(() => {
+  function onResize() {
+    setIsWide(window.innerWidth >= 900);
+  }
+  window.addEventListener("resize", onResize);
+  return () => window.removeEventListener("resize", onResize);
+}, []);
+
   useEffect(() => {
   let alive = true;
 
@@ -363,160 +372,245 @@ setCurrentStop(stopsList[0] || null);
     await reloadStops();
   }
   
-  return (
+    return (
+  <div
+    style={{
+      fontFamily: "Arial",
+      padding: 12,
+      width: "100%",
+      maxWidth: 980,
+      margin: "0 auto",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+    }}
+  >
+    <h2 style={{ margin: 0 }}>Motorista — Rota do Dia</h2>
+
+    {/* Status / Info */}
     <div
       style={{
-        fontFamily: "Arial",
+        marginTop: 10,
+        border: "1px solid #e5e7eb",
+        borderRadius: 14,
         padding: 12,
-        width: "100%",
-        maxWidth: 520,
-        margin: "0 auto",
-        boxSizing: "border-box",
-        overflowX: "hidden",
+        background: "#fff",
+        boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
       }}
     >
-      <h2>Motorista — Rastreamento</h2>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div>
+          <strong>Status:</strong> {status}
+        </div>
+        <div>
+          <strong>Último envio:</strong> {lastSent ?? "—"}
+        </div>
+        {stopsMsg && (
+          <div style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}>
+            {stopsMsg}
+          </div>
+        )}
+      </div>
+    </div>
 
-      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-        <button onClick={startTracking} style={{ padding: "10px 14px" }}>
-          Iniciar GPS
-        </button>
-        <button onClick={stopTracking} style={{ padding: "10px 14px" }}>
-          Parar
-        </button>
+    {/* GRID: mobile 1 coluna | desktop 2 colunas */}
+    <div
+      style={{
+        marginTop: 12,
+        display: "grid",
+        gridTemplateColumns: isWide ? "1.15fr 0.85fr" : "1fr",
+        gap: 12,
+      }}
+    >
+      {/* COLUNA 1 — Ações + Entrega Atual + Upload */}
+      <div style={{ display: "grid", gap: 12 }}>
+        {/* Ações */}
         <div
-  style={{
-    marginTop: 12,
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 10,
-  }}
->
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 14,
+            padding: 12,
+            background: "#fff",
+            boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>Ações</div>
 
-<button
-  style={{ padding: "12px 14px", width: "100%", borderRadius: 12 }}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button
+              onClick={startTracking}
+              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+            >
+              Iniciar GPS
+            </button>
+            <button
+              onClick={stopTracking}
+              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+            >
+              Parar
+            </button>
+          </div>
 
-  
-    disabled={!currentStop}
-    onClick={openNextInWaze}
-  >
-    Ir para a próxima (Waze)
-  </button>
+          <button
+            style={{
+              marginTop: 10,
+              padding: "14px 12px",
+              width: "100%",
+              borderRadius: 12,
+              fontWeight: 900,
+            }}
+            disabled={!currentStop}
+            onClick={openNextInWaze}
+          >
+            Ir para a próxima (Waze)
+          </button>
 
-  <button
-    style={{ padding: "10px 14px" }}
-    disabled={!currentStop}
-    onClick={concluirEntregaAtual}
-  >
-    Concluir entrega atual
-  </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+            <button
+              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+              disabled={!currentStop}
+              onClick={concluirEntregaAtual}
+            >
+              Concluir entrega
+            </button>
 
-  <button style={{ padding: "12px 14px", width: "100%", borderRadius: 12 }} onClick={reloadStops}>
+            <button
+              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+              onClick={reloadStops}
+            >
+              Recarregar lista
+            </button>
+          </div>
+        </div>
 
-    Recarregar lista
-  </button>
-</div>
-
-{currentStop && (
-  <div
-  style={{
-    marginTop: 10,
-    padding: 12,
-    border: "1px solid #e5e7eb",
-    borderRadius: 14,
-    background: "#fff",
-    boxSizing: "border-box",
-    wordBreak: "break-word",
-  }}
->
-
-    <div style={{ fontWeight: 700 }}>Entrega atual</div>
-    <div><strong>Pedido:</strong> {currentStop.pedido ?? "—"}</div>
-    <div><strong>Cliente:</strong> {currentStop.cliente ?? "—"}</div>
-    <div><strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}</div>
-  </div>
-)}
-      
-        <div style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
-  <h3>Entregas do dia</h3>
-
-  {stopsMsg && <p>{stopsMsg}</p>}
-
-  {stops.length > 0 && (
-    <div style={{ display: "grid", gap: 10, width: "100%" }}>
-
-      {stops.map((s, idx) => (
+        {/* Entrega Atual */}
         <div
-        key={s.id}
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 14,
+            padding: 12,
+            background: "#fff",
+            boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+            wordBreak: "break-word",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>Entrega atual</div>
+
+          {!currentStop ? (
+            <div style={{ opacity: 0.8 }}>Nenhuma entrega selecionada ainda.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              <div>
+                <strong>Pedido:</strong> {currentStop.pedido ?? "—"}
+              </div>
+              <div>
+                <strong>Cliente:</strong> {currentStop.cliente ?? "—"}
+              </div>
+              <div>
+                <strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Upload (teste) */}
+        <div
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 14,
+            padding: 12,
+            background: "#fff",
+            boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>Entrega (teste)</div>
+
+          <label style={{ display: "block", marginBottom: 6 }}>Status da entrega:</label>
+          <select
+            value={deliveryStatus}
+            onChange={(e) => setDeliveryStatus(e.target.value)}
+            style={{ padding: 12, width: "100%", borderRadius: 12, marginBottom: 10 }}
+          >
+            <option value="entregue">Entregue</option>
+            <option value="falhou">Não entregue (falhou)</option>
+            <option value="reagendado">Reagendado</option>
+          </select>
+
+          <label style={{ display: "block", marginBottom: 6 }}>Foto do recebimento:</label>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+            style={{ width: "100%", marginBottom: 10 }}
+          />
+
+          <button
+            onClick={enviarFotoEStatus}
+            style={{ padding: "14px 12px", width: "100%", borderRadius: 12, fontWeight: 900 }}
+          >
+            Enviar foto + status
+          </button>
+
+          {uploadMsg && <p style={{ marginTop: 10 }}>{uploadMsg}</p>}
+        </div>
+      </div>
+
+      {/* COLUNA 2 — Lista de Entregas */}
+      <div
         style={{
           border: "1px solid #e5e7eb",
           borderRadius: 14,
           padding: 12,
           background: "#fff",
-          boxSizing: "border-box",
-          wordBreak: "break-word",
+          boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
         }}
       >
-      
-          <div style={{ fontWeight: 700 }}>Parada {idx + 1}</div>
-          <div><strong>Pedido:</strong> {s.pedido ?? "—"}</div>
-          <div><strong>Cliente:</strong> {s.cliente ?? "—"}</div>
-          <div><strong>Endereço:</strong> {s.endereco_completo ?? "—"}</div>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Entregas do dia</div>
 
-          <button
-            style={{ marginTop: 10, padding: "10px 14px" }}
-            onClick={() => window.open(wazeUrlFromLatLng(s.lat, s.lng), "_blank")}
-          >
-            Abrir no Waze
-          </button>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
+        {stops.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>Sem entregas carregadas.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {stops.map((s, idx) => (
+              <div
+                key={s.id}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 14,
+                  padding: 12,
+                  background: "#fff",
+                  wordBreak: "break-word",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>Parada {idx + 1}</div>
+                <div>
+                  <strong>Pedido:</strong> {s.pedido ?? "—"}
+                </div>
+                <div>
+                  <strong>Cliente:</strong> {s.cliente ?? "—"}
+                </div>
+                <div>
+                  <strong>Endereço:</strong> {s.endereco_completo ?? "—"}
+                </div>
 
+                <button
+                  style={{
+                    marginTop: 10,
+                    padding: "12px 12px",
+                    width: "100%",
+                    borderRadius: 12,
+                    fontWeight: 800,
+                  }}
+                  onClick={() => window.open(wazeUrlFromLatLng(s.lat, s.lng), "_blank")}
+                >
+                  Abrir no Waze
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      <p style={{ marginTop: 12 }}>
-        <strong>Status:</strong> {status}
-      </p>
-      <p>
-        <strong>Último envio:</strong> {lastSent ?? "—"}
-      </p>
-      <hr style={{ margin: "16px 0" }} />
-
-<h3>Entrega (teste)</h3>
-
-<label style={{ display: "block", marginBottom: 6 }}>
-  Status da entrega:
-</label>
-<select
-  value={deliveryStatus}
-  onChange={(e) => setDeliveryStatus(e.target.value)}
-  style={{ padding: 10, width: "100%", marginBottom: 10 }}
->
-  <option value="entregue">Entregue</option>
-  <option value="falhou">Não entregue (falhou)</option>
-  <option value="reagendado">Reagendado</option>
-</select>
-
-<label style={{ display: "block", marginBottom: 6 }}>
-  Foto do recebimento:
-</label>
-<input
-  type="file"
-  accept="image/*"
-  capture="environment"
-  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-  style={{ marginBottom: 10 }}
-/>
-
-<button onClick={enviarFotoEStatus} style={{ padding: "10px 14px" }}>
-  Enviar foto + status
-</button>
-
-{uploadMsg && <p style={{ marginTop: 10 }}>{uploadMsg}</p>}
-
     </div>
-  );
+  </div>
+);
 }
