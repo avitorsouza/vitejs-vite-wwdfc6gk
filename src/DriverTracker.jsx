@@ -361,18 +361,12 @@ async function reloadStops() {
   return next; // ✅ importante
 }
 
-  function openInWazeFromStop(stop, preOpenedWindow) {
+function openInWazeFromStop(stop) {
   if (!stop) return;
   const url = wazeUrlFromLatLng(stop.lat, stop.lng);
 
-  // Se já abrimos uma janela antes (para não ser bloqueado), usamos ela
-  if (preOpenedWindow && !preOpenedWindow.closed) {
-    preOpenedWindow.location.href = url;
-    return;
-  }
-
-  // fallback
-  window.open(url, "_blank");
+  // ✅ sempre na mesma aba (não cria aba em branco)
+  window.location.assign(url);
 }
 
   function openNextInWaze() {
@@ -383,35 +377,26 @@ async function reloadStops() {
 async function concluirEntregaAtual() {
   if (!currentStop) return;
 
-  // ✅ abre uma janela AGORA (evita bloqueio de popup)
-  const w = window.open("about:blank", "_blank");
-
   const { error } = await supabase
     .from("deliveries")
-    .update({ status: "Entregue✅", completed_at: new Date().toISOString() })
+    .update({ status: "entregue", completed_at: new Date().toISOString() })
     .eq("id", currentStop.id);
 
   if (error) {
     setStopsMsg("Erro ao concluir entrega: " + error.message);
-    // fecha a janela em branco se deu erro
-    try { if (w && !w.closed) w.close(); } catch {}
     return;
   }
 
-  // carrega próxima
   const next = await reloadStops();
 
-  // se não tem próxima, fecha a janela e avisa
   if (!next) {
     setStopsMsg("✅ Entrega concluída. Não há próxima parada pendente.");
-    try { if (w && !w.closed) w.close(); } catch {}
     return;
   }
 
-  // abre Waze para a próxima (na mesma aba que já abriu)
-  openInWazeFromStop(next, preOpened);
-
+  openInWazeFromStop(next);
 }
+
   
     return (
   <div
