@@ -14,6 +14,7 @@ export default function DriverTracker() {
   const [user, setUser] = useState(null);
   const [currentStop, setCurrentStop] = useState(null);
   const [stops, setStops] = useState([]);
+  const [isWide, setIsWide] = useState(window.innerWidth >= 900);
   const [stopsMsg, setStopsMsg] = useState("Carregando entregas...");
   const [status, setStatus] = useState("Parado");
   const [lastSent, setLastSent] = useState(null);
@@ -160,6 +161,14 @@ export default function DriverTracker() {
   }
   
   useEffect(() => () => stopTracking(), []);
+  useEffect(() => {
+  function onResize() {
+    setIsWide(window.innerWidth >= 900);
+  }
+  window.addEventListener("resize", onResize);
+  return () => window.removeEventListener("resize", onResize);
+}, []);
+
   useEffect(() => {
   function onResize() {
     setIsWide(window.innerWidth >= 900);
