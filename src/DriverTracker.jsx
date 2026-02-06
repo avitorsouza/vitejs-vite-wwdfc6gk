@@ -6,7 +6,10 @@ function wazeUrlFromLatLng(lat, lng) {
   return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
 }
 export default function DriverTracker() {
-  const [isWide, setIsWide] = useState(window.innerWidth >= 900);
+  // ✅ NÃO abre aba em branco agora.
+// Vamos tentar abrir o Waze depois, e só usar fallback se necessário.
+ let preOpened = null;
+
   const [tracking, setTracking] = useState(false);
   const [user, setUser] = useState(null);
   const [currentStop, setCurrentStop] = useState(null);
@@ -390,7 +393,8 @@ async function concluirEntregaAtual() {
   }
 
   // abre Waze para a próxima (na mesma aba que já abriu)
-  openInWazeFromStop(next, w);
+  openInWazeFromStop(next, preOpened);
+
 }
   
     return (
