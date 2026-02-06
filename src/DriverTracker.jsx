@@ -388,7 +388,7 @@ async function concluirEntregaAtual() {
 
   const { error } = await supabase
     .from("deliveries")
-    .update({ status: "entregue", completed_at: new Date().toISOString() })
+    .update({ status: "Entregue✅", completed_at: new Date().toISOString() })
     .eq("id", currentStop.id);
 
   if (error) {
@@ -642,7 +642,7 @@ async function concluirEntregaAtual() {
                     borderRadius: 12,
                     fontWeight: 800,
                   }}
-                  onClick={() => window.open(wazeUrlFromLatLng(s.lat, s.lng), "_blank")}
+                  onClick={() => openInWazeFromStop(s)}
                 >
                   Abrir no Waze
                 </button>
