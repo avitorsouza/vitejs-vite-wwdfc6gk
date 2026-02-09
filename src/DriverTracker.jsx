@@ -460,6 +460,20 @@ async function concluirEntregaAtual() {
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Ações</div>
+          <button
+  style={{
+    marginTop: 10,
+    padding: "14px 12px",
+    width: "100%",
+    borderRadius: 12,
+    fontWeight: 900,
+  }}
+  disabled={!currentStop}
+  onClick={() => openInWazeFromStop(currentStop)}
+>
+  Abrir no Waze (entrega atual)
+</button>
+
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <button
@@ -520,7 +534,11 @@ async function concluirEntregaAtual() {
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 10 }}>Entrega atual</div>
-
+          {currentStop?.stop_order != null && (
+  <div style={{ marginBottom: 8, opacity: 0.75 }}>
+    Parada #{currentStop.stop_order} • Restantes: {stops.length}
+  </div>
+)}
           {!currentStop ? (
             <div style={{ opacity: 0.8 }}>Nenhuma entrega selecionada ainda.</div>
           ) : (
@@ -534,6 +552,20 @@ async function concluirEntregaAtual() {
               <div>
                 <strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}
               </div>
+              <button
+  style={{
+    marginTop: 10,
+    padding: "14px 12px",
+    width: "100%",
+    borderRadius: 12,
+    fontWeight: 900,
+  }}
+  disabled={!currentStop}
+  onClick={() => openInWazeFromStop(currentStop)}
+>
+  Abrir no Waze (entrega atual)
+</button>
+
             </div>
           )}
         </div>
@@ -618,19 +650,6 @@ async function concluirEntregaAtual() {
                 <div>
                   <strong>Endereço:</strong> {s.endereco_completo ?? "—"}
                 </div>
-
-                <button
-                  style={{
-                    marginTop: 10,
-                    padding: "12px 12px",
-                    width: "100%",
-                    borderRadius: 12,
-                    fontWeight: 800,
-                  }}
-                  onClick={() => openInWazeFromStop(s)}
-                >
-                  Abrir no Waze
-                </button>
               </div>
             ))}
           </div>
