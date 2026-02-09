@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import { supabase } from "./supabase";
 import ExcelImport from "./ExcelImport";
+import ManualRoutePlanner from "./ManualRoutePlanner";
+
 
 
 function groupLatestByDriver(rows) {
@@ -238,6 +240,7 @@ const center = useMemo(() => [-3.1190, -60.0217], []);
       const { data: del, error: delErr } = await supabase
         .from("deliveries")
         .select("id, cliente, endereco_completo, pedido, status, photo_url, completed_at, created_at")
+        .in("status", ["pendente", "em_rota"])
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -322,7 +325,7 @@ async function gerarRotaOtimizada() {
     const { data: pend, error: pendErr } = await supabase
       .from("deliveries")
       .select("id, pedido, cliente, endereco_completo, lat, lng, status")
-      .eq("status", "pendente")
+      .in("status", ["em_rota", "pendente"])
       .not("lat", "is", null)
       .not("lng", "is", null)
       .order("created_at", { ascending: true })
@@ -396,6 +399,9 @@ async function gerarRotaOtimizada() {
       <p><strong>Status:</strong> {status}</p>
       <ExcelImport
     onImported={async () => {
+      <div style={{ marginTop: 12 }}>
+  <ManualRoutePlanner onRouteCreated={() => {}} />
+</div>
       const { data: del, error: delErr } = await supabase
         .from("deliveries")
         .select("id, cliente, endereco, status, photo_url, completed_at, created_at")
