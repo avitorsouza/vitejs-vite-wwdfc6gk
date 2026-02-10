@@ -82,6 +82,7 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
           {
             vehicle_id: selectedVehicleId,
             status: "ativa",
+            depot_address: "AV. TEFÉ, 2840 - JAPIIM - MANAUS",
           },
         ]);
 
