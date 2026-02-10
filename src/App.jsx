@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
-import AdminLiveMap from "./AdminLiveMap";
+import AdminLiveMap from "./AdminHome";
 import DriverTracker from "./DriverTracker";
+import AdminHome from "./AdminHome";
 
 function Login({ onLogged }) {
   const [email, setEmail] = useState("");
@@ -55,11 +56,9 @@ export default function App() {
       setUser(data.session?.user ?? null);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
     return () => {
       sub.subscription.unsubscribe();
@@ -93,5 +92,5 @@ export default function App() {
   if (!user) return <Login onLogged={setUser} />;
   if (!role) return <div style={{ padding: 16 }}>Carregando perfil...</div>;
 
-  return role === "admin" ? <AdminLiveMap /> : <DriverTracker />;
+  return role === "admin" ? <AdminHome /> : <DriverTracker />;
 }

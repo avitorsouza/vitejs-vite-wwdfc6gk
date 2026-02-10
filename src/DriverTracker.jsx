@@ -126,14 +126,16 @@ export default function DriverTracker() {
     // 3) buscar paradas + entrega vinculada
     const { data, error } = await supabase
       .from("route_stops")
-      .select(`
+      .select(
+        `
         stop_order,
         eta_seconds,
         leg_seconds,
         deliveries:delivery_id (
           id, pedido, cliente, endereco_completo, lat, lng, status
         )
-      `)
+      `,
+      )
       .eq("route_id", r.id)
       .order("stop_order", { ascending: true });
 
@@ -156,7 +158,7 @@ export default function DriverTracker() {
         (d) =>
           d?.status === "pendente" &&
           Number.isFinite(d.lat) &&
-          Number.isFinite(d.lng)
+          Number.isFinite(d.lng),
       );
 
     setStops(stopsList);
@@ -207,7 +209,7 @@ export default function DriverTracker() {
       (err) => {
         setStatus("Erro GPS: " + err.message);
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
 
     watchIdRef.current = id;
@@ -237,7 +239,8 @@ export default function DriverTracker() {
       }
 
       // Bucket do Supabase Storage (ajuste se o seu tiver outro nome)
-      const BUCKET = import.meta.env.VITE_RECEIPT_BUCKET || "foto-do-recebimento";
+      const BUCKET =
+        import.meta.env.VITE_RECEIPT_BUCKET || "foto-do-recebimento";
 
       const ext = (selectedFile.name.split(".").pop() || "jpg").toLowerCase();
       const path = `${currentStop.id}/${Date.now()}.${ext}`;
@@ -317,9 +320,16 @@ export default function DriverTracker() {
                 Entrega atual
               </div>
               <div style={{ display: "grid", gap: 6 }}>
-                <div><strong>Pedido:</strong> {currentStop.pedido ?? "—"}</div>
-                <div><strong>Cliente:</strong> {currentStop.cliente ?? "—"}</div>
-                <div><strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}</div>
+                <div>
+                  <strong>Pedido:</strong> {currentStop.pedido ?? "—"}
+                </div>
+                <div>
+                  <strong>Cliente:</strong> {currentStop.cliente ?? "—"}
+                </div>
+                <div>
+                  <strong>Endereço:</strong>{" "}
+                  {currentStop.endereco_completo ?? "—"}
+                </div>
               </div>
             </>
           ) : (
@@ -343,7 +353,12 @@ export default function DriverTracker() {
           <select
             value={deliveryStatus}
             onChange={(e) => setDeliveryStatus(e.target.value)}
-            style={{ padding: 12, width: "100%", borderRadius: 12, marginBottom: 10 }}
+            style={{
+              padding: 12,
+              width: "100%",
+              borderRadius: 12,
+              marginBottom: 10,
+            }}
           >
             <option value="entregue">Entregue</option>
             <option value="falhou">Não entregue (falhou)</option>
@@ -432,10 +447,16 @@ export default function DriverTracker() {
         }}
       >
         <div style={{ display: "grid", gap: 6 }}>
-          <div><strong>Status GPS:</strong> {status}</div>
-          <div><strong>Último envio:</strong> {lastSent ?? "—"}</div>
+          <div>
+            <strong>Status GPS:</strong> {status}
+          </div>
+          <div>
+            <strong>Último envio:</strong> {lastSent ?? "—"}
+          </div>
           {stopsMsg && (
-            <div style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}>
+            <div
+              style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}
+            >
               {stopsMsg}
             </div>
           )}
@@ -462,16 +483,26 @@ export default function DriverTracker() {
         >
           <div style={{ fontWeight: 900, marginBottom: 10 }}>Ações</div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+          >
             <button
               onClick={startTracking}
-              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+              style={{
+                padding: "14px 12px",
+                borderRadius: 12,
+                fontWeight: 800,
+              }}
             >
               Iniciar GPS
             </button>
             <button
               onClick={stopTracking}
-              style={{ padding: "14px 12px", borderRadius: 12, fontWeight: 800 }}
+              style={{
+                padding: "14px 12px",
+                borderRadius: 12,
+                fontWeight: 800,
+              }}
             >
               Parar
             </button>
@@ -538,7 +569,9 @@ export default function DriverTracker() {
           <div style={{ fontWeight: 900, marginBottom: 10 }}>Entrega atual</div>
 
           {!currentStop ? (
-            <div style={{ opacity: 0.8 }}>Nenhuma entrega selecionada ainda.</div>
+            <div style={{ opacity: 0.8 }}>
+              Nenhuma entrega selecionada ainda.
+            </div>
           ) : (
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ opacity: 0.8 }}>
@@ -546,9 +579,16 @@ export default function DriverTracker() {
                   ? `Parada #${currentStop.stop_order} • Restantes: ${stops.length}`
                   : `Restantes: ${stops.length}`}
               </div>
-              <div><strong>Pedido:</strong> {currentStop.pedido ?? "—"}</div>
-              <div><strong>Cliente:</strong> {currentStop.cliente ?? "—"}</div>
-              <div><strong>Endereço:</strong> {currentStop.endereco_completo ?? "—"}</div>
+              <div>
+                <strong>Pedido:</strong> {currentStop.pedido ?? "—"}
+              </div>
+              <div>
+                <strong>Cliente:</strong> {currentStop.cliente ?? "—"}
+              </div>
+              <div>
+                <strong>Endereço:</strong>{" "}
+                {currentStop.endereco_completo ?? "—"}
+              </div>
             </div>
           )}
         </div>
@@ -563,7 +603,9 @@ export default function DriverTracker() {
             boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
           }}
         >
-          <div style={{ fontWeight: 900, marginBottom: 10 }}>Entregas do dia</div>
+          <div style={{ fontWeight: 900, marginBottom: 10 }}>
+            Entregas do dia
+          </div>
 
           {stops.length === 0 ? (
             <div style={{ opacity: 0.8 }}>Sem entregas carregadas.</div>
@@ -581,9 +623,15 @@ export default function DriverTracker() {
                   }}
                 >
                   <div style={{ fontWeight: 900 }}>Parada {idx + 1}</div>
-                  <div><strong>Pedido:</strong> {s.pedido ?? "—"}</div>
-                  <div><strong>Cliente:</strong> {s.cliente ?? "—"}</div>
-                  <div><strong>Endereço:</strong> {s.endereco_completo ?? "—"}</div>
+                  <div>
+                    <strong>Pedido:</strong> {s.pedido ?? "—"}
+                  </div>
+                  <div>
+                    <strong>Cliente:</strong> {s.cliente ?? "—"}
+                  </div>
+                  <div>
+                    <strong>Endereço:</strong> {s.endereco_completo ?? "—"}
+                  </div>
                 </div>
               ))}
             </div>
