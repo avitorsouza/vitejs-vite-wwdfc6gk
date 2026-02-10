@@ -398,19 +398,28 @@ async function gerarRotaOtimizada() {
       <p><strong>Entregas carregadas:</strong> {deliveries?.length ?? 0}</p>
       <p><strong>Status:</strong> {status}</p>
       <ExcelImport
-    onImported={async () => {
-      <div style={{ marginTop: 12 }}>
-  <ManualRoutePlanner onRouteCreated={() => {}} />
-</div>
-      const { data: del, error: delErr } = await supabase
-        .from("deliveries")
-        .select("id, cliente, endereco, status, photo_url, completed_at, created_at")
-        .order("created_at", { ascending: false })
-        .limit(50);
+  onImported={async () => {
+    const { data: del, error: delErr } = await supabase
+      .from("deliveries")
+      .select("id, pedido, cliente, endereco_completo, status, photo_url, completed_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
 
-      if (!delErr && del) setDeliveries(del);
-    }}
-  />
+    if (!delErr && del) setDeliveries(del);
+  }}
+/>
+<div style={{ marginTop: 12 }}>
+  <ManualRoutePlanner onRouteCreated={async () => {
+    const { data: del, error: delErr } = await supabase
+      .from("deliveries")
+      .select("id, pedido, cliente, endereco_completo, status, photo_url, completed_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!delErr && del) setDeliveries(del);
+  }} />
+</div>
+
   <div style={{ marginTop: 10, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
   <h3>Gerar rota (otimizada)</h3>
 
