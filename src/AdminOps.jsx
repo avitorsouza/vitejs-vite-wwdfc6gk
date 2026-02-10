@@ -54,10 +54,15 @@ export default function AdminOps() {
 
   // veículos já usados (já possuem rota ativa) -> trava seleção (regra 5)
   async function refreshUsedVehicles() {
+    // início do dia (Manaus)
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
     const { data, error } = await supabase
       .from("routes")
-      .select("vehicle_id")
+      .select("vehicle_id, created_at, status")
       .eq("status", "ativa")
+      .gte("created_at", start.toISOString())
       .limit(200);
 
     if (!error) {
@@ -273,6 +278,34 @@ export default function AdminOps() {
           <div style={{ marginBottom: 10, opacity: 0.85 }}>
             Você vai selecionar entregas para um caminhão, criar a rota, e elas
             somem da lista.
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            <button
+              onClick={async () => {
+                setStep(3);
+                setGeoMsg("");
+                const { error } = await supabase
+                  .from("routes")
+                  .update({ status: "encerrada" })
+                  .eq("status", "ativa");
+                if (error) alert("Erro ao encerrar rotas: " + error.message);
+                await refreshUsedVehicles();
+              }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                fontWeight: 900,
+              }}
+            >
+              Encerrar todas rotas ativas
+            </button>
           </div>
 
           <ManualRoutePlanner
