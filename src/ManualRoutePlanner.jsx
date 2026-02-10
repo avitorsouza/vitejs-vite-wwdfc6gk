@@ -84,7 +84,9 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
             status: "ativa",
             depot_address: "AV. TEFÉ, 2840 - JAPIIM - MANAUS",
           },
-        ]);
+        ])
+        .select("id")
+        .single();
 
       if (rErr || !route?.id) {
         setMsg("Erro ao criar rota: " + (rErr?.message || "sem id"));
