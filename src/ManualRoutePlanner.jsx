@@ -31,7 +31,9 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
     setMsg("Carregando entregas pendentes...");
     const { data, error } = await supabase
       .from("deliveries")
-      .select("id, pedido, cliente, endereco_completo, lat, lng, status, created_at")
+      .select(
+        "id, pedido, cliente, endereco_completo, lat, lng, status, created_at",
+      )
       .eq("status", "pendente")
       .not("lat", "is", null)
       .not("lng", "is", null)
@@ -80,11 +82,8 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
           {
             vehicle_id: selectedVehicleId,
             status: "ativa",
-            mode: "manual",
           },
-        ])
-        .select("id")
-        .single();
+        ]);
 
       if (rErr || !route?.id) {
         setMsg("Erro ao criar rota: " + (rErr?.message || "sem id"));
@@ -100,7 +99,9 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
         stop_order: idx + 1,
       }));
 
-      const { error: sErr } = await supabase.from("route_stops").insert(stopsPayload);
+      const { error: sErr } = await supabase
+        .from("route_stops")
+        .insert(stopsPayload);
       if (sErr) {
         setMsg("Erro ao criar paradas: " + sErr.message);
         return;
@@ -114,7 +115,9 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
         .in("id", ids);
 
       if (upErr) {
-        setMsg("Rota criada, mas falhou ao atualizar entregas: " + upErr.message);
+        setMsg(
+          "Rota criada, mas falhou ao atualizar entregas: " + upErr.message,
+        );
       } else {
         setMsg(`✅ Rota criada para ${ordered.length} entregas.`);
       }
@@ -130,8 +133,17 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
   }
 
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 12, background: "#fff" }}>
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>Planejador Manual de Rotas</div>
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 14,
+        padding: 12,
+        background: "#fff",
+      }}
+    >
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>
+        Planejador Manual de Rotas
+      </div>
 
       <div style={{ display: "grid", gap: 10 }}>
         <div>
@@ -158,18 +170,42 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
           >
             {busy ? "Criando..." : `Criar rota (${selectedCount})`}
           </button>
-          <button onClick={clearSelection} disabled={busy} style={{ padding: "12px 12px", borderRadius: 12 }}>
+          <button
+            onClick={clearSelection}
+            disabled={busy}
+            style={{ padding: "12px 12px", borderRadius: 12 }}
+          >
             Limpar seleção
           </button>
-          <button onClick={loadDeliveries} disabled={busy} style={{ padding: "12px 12px", borderRadius: 12 }}>
+          <button
+            onClick={loadDeliveries}
+            disabled={busy}
+            style={{ padding: "12px 12px", borderRadius: 12 }}
+          >
             Recarregar entregas
           </button>
         </div>
 
-        {msg && <div style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}>{msg}</div>}
+        {msg && (
+          <div style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}>
+            {msg}
+          </div>
+        )}
 
-        <div style={{ fontWeight: 700 }}>Entregas pendentes (clique para selecionar)</div>
-        <div style={{ display: "grid", gap: 8, maxHeight: 320, overflow: "auto", border: "1px solid #eee", borderRadius: 12, padding: 8 }}>
+        <div style={{ fontWeight: 700 }}>
+          Entregas pendentes (clique para selecionar)
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gap: 8,
+            maxHeight: 320,
+            overflow: "auto",
+            border: "1px solid #eee",
+            borderRadius: 12,
+            padding: 8,
+          }}
+        >
           {deliveries.map((d) => {
             const checked = selected.has(d.id);
             return (
@@ -187,8 +223,12 @@ export default function ManualRoutePlanner({ onRouteCreated }) {
                 <div style={{ fontWeight: 900 }}>
                   {checked ? "✅ " : ""}Pedido: {d.pedido ?? "—"}
                 </div>
-                <div><strong>Cliente:</strong> {d.cliente ?? "—"}</div>
-                <div style={{ opacity: 0.9 }}><strong>Endereço:</strong> {d.endereco_completo ?? "—"}</div>
+                <div>
+                  <strong>Cliente:</strong> {d.cliente ?? "—"}
+                </div>
+                <div style={{ opacity: 0.9 }}>
+                  <strong>Endereço:</strong> {d.endereco_completo ?? "—"}
+                </div>
               </div>
             );
           })}
