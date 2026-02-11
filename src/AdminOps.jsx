@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 import ExcelImport from "./ExcelImport";
 import ManualRoutePlanner from "./ManualRoutePlanner";
+import AdminRoutesSummary from "./AdminRoutesSummary";
 
 export default function AdminOps() {
   // Etapas: 1 Importar | 2 Geocodificar | 3 Rotear
@@ -319,6 +320,7 @@ export default function AdminOps() {
           />
         </Card>
       )}
+      <AdminRoutesSummary />
     </div>
   );
 }
