@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 export default function AdminRoutesSummary() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [who, setWho] = useState("");
   const [rows, setRows] = useState([]); // rotas ativas + veículo + paradas
 
   useEffect(() => {
@@ -11,6 +12,10 @@ export default function AdminRoutesSummary() {
   }, []);
 
   async function load() {
+    const { data: u } = await supabase.auth.getUser();
+    setWho(
+      u?.user?.email ? `Logado como: ${u.user.email}` : "⚠️ NÃO LOGADO (anon)",
+    );
     setBusy(true);
     setMsg("");
     try {
@@ -97,6 +102,7 @@ export default function AdminRoutesSummary() {
       >
         <div style={{ fontWeight: 900 }}>
           Resumo — Entregas por caminhão (rotas ativas)
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>{who}</div>
         </div>
         <button
           onClick={load}
