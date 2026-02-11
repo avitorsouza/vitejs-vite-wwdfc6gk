@@ -3,21 +3,19 @@ import { supabase } from "./supabase";
 
 /**
  * DriverTracker.jsx
- * - Tela principal: mostra entrega atual + ações
- * - Tela exclusiva de conclusão: status + foto + enviar
- * - Após enviar: volta pra principal, recarrega paradas e abre Waze da próxima
+ * - Tela principal: entrega atual + ações + lista do dia
+ * - Tela exclusiva: concluir entrega (entregue => foto obrigatória | não entregue => justificativa obrigatória)
+ * - Após enviar: volta pra principal, recarrega e abre Waze da próxima
  */
 
 function wazeUrlFromLatLng(lat, lng) {
-  // Link universal do Waze
   return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
 }
 
 function openInWazeFromStop(stop) {
   if (!stop) return;
   const url = wazeUrlFromLatLng(stop.lat, stop.lng);
-
-  // abre na mesma aba (evita “aba branca” criada pelo nosso código)
+  // abre na mesma aba para evitar "aba branca"
   window.location.assign(url);
 }
 
@@ -37,11 +35,11 @@ export default function DriverTracker() {
 
   // ---- tela exclusiva de conclusão
   const [showFinish, setShowFinish] = useState(false);
-  const [deliveryStatus, setDeliveryStatus] = useState("entregue");
+  const [deliveryStatus, setDeliveryStatus] = useState("entregue"); // entregue | nao_realizada
   const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadMsg, setUploadMsg] = useState("");
-  const [failureReason, setFailureReason] = useState("");
   const [justificativa, setJustificativa] = useState("");
+  const [uploadMsg, setUploadMsg] = useState("");
+
   const centerName = useMemo(() => "Motorista — Rota do Dia", []);
 
   // 1) Carregar usuário logado
@@ -50,11 +48,13 @@ export default function DriverTracker() {
 
     supabase.auth.getUser().then(({ data, error }) => {
       if (!alive) return;
+
       if (error) {
         setUser(null);
         setStopsMsg("Erro ao carregar usuário: " + error.message);
         return;
       }
+
       setUser(data?.user || null);
     });
 
@@ -147,10 +147,10 @@ export default function DriverTracker() {
       return null;
     }
 
-    // 4) formato final + filtrar pendentes com lat/lng
+    // 4) formato final + filtrar entregas em rota com lat/lng
     const stopsList = (data || [])
       .map((x) => ({
-        ...x.deliveries,
+        ...(x.deliveries || {}),
         stop_order: x.stop_order,
         eta_seconds: x.eta_seconds,
         leg_seconds: x.leg_seconds,
@@ -163,7 +163,7 @@ export default function DriverTracker() {
       );
 
     setStops(stopsList);
-    setStopsMsg(stopsList.length ? "" : "Nenhuma parada pendente na rota.");
+    setStopsMsg(stopsList.length ? "" : "Nenhuma entrega em rota para você.");
     const next = stopsList[0] || null;
     setCurrentStop(next);
     return next;
@@ -172,6 +172,7 @@ export default function DriverTracker() {
   // ---- GPS
   async function sendLocation(lat, lng, speed) {
     if (!user?.id) return;
+
     const { error } = await supabase.from("driver_locations").insert([
       {
         driver_id: user.id,
@@ -182,7 +183,6 @@ export default function DriverTracker() {
     ]);
 
     if (error) {
-      // não travar a UI por erro intermitente
       console.warn("Erro enviando local:", error.message);
       return;
     }
@@ -207,9 +207,7 @@ export default function DriverTracker() {
         const { latitude, longitude, speed } = pos.coords;
         sendLocation(latitude, longitude, speed);
       },
-      (err) => {
-        setStatus("Erro GPS: " + err.message);
-      },
+      (err) => setStatus("Erro GPS: " + err.message),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
 
@@ -245,7 +243,7 @@ export default function DriverTracker() {
       }
 
       if (deliveryStatus === "nao_realizada") {
-        if (!failureReason?.trim()) {
+        if (!justificativa?.trim()) {
           setUploadMsg(
             "Para marcar como NÃO ENTREGUE, é obrigatório informar a justificativa.",
           );
@@ -259,16 +257,12 @@ export default function DriverTracker() {
       if (deliveryStatus === "entregue") {
         const BUCKET =
           import.meta.env.VITE_RECEIPT_BUCKET || "foto-do-recebimento";
-
         const ext = (selectedFile.name.split(".").pop() || "jpg").toLowerCase();
         const path = `${currentStop.id}/${Date.now()}.${ext}`;
 
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
-          .upload(path, selectedFile, {
-            cacheControl: "3600",
-            upsert: true,
-          });
+          .upload(path, selectedFile, { cacheControl: "3600", upsert: true });
 
         if (upErr) {
           setUploadMsg("Erro ao enviar foto: " + upErr.message);
@@ -295,7 +289,7 @@ export default function DriverTracker() {
 
         setUploadMsg("✅ Entrega concluída com foto!");
         setSelectedFile(null);
-        setFailureReason("");
+        setJustificativa("");
         return true;
       }
 
@@ -308,7 +302,7 @@ export default function DriverTracker() {
           .update({
             status: "nao_realizada",
             completed_at: new Date().toISOString(),
-            failure_reason: failureReason.trim(),
+            failure_reason: justificativa.trim(),
             photo_url: null,
           })
           .eq("id", currentStop.id);
@@ -320,12 +314,11 @@ export default function DriverTracker() {
 
         setUploadMsg("✅ Marcado como NÃO ENTREGUE (com justificativa).");
         setSelectedFile(null);
-        setFailureReason("");
+        setJustificativa("");
         return true;
       }
 
-      // fallback
-      setUploadMsg("Status inválido. Use 'entregue' ou 'nao_realizada'.");
+      setUploadMsg("Status inválido.");
       return false;
     } catch (e) {
       setUploadMsg("Erro inesperado: " + String(e?.message || e));
@@ -337,6 +330,9 @@ export default function DriverTracker() {
   //  TELA EXCLUSIVA: CONCLUIR ENTREGA
   // =========================================================
   if (showFinish) {
+    const canSendEntregue = !!currentStop && !!selectedFile;
+    const canSendNaoEntregue = !!currentStop && !!justificativa?.trim();
+
     return (
       <div
         style={{
@@ -392,76 +388,124 @@ export default function DriverTracker() {
             padding: 12,
             background: "#fff",
             boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+            boxSizing: "border-box",
           }}
         >
           <label style={{ display: "block", marginBottom: 6 }}>
             Status da entrega:
           </label>
+
           <select
             value={deliveryStatus}
-            onChange={(e) => setDeliveryStatus(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setDeliveryStatus(v);
+              setUploadMsg("");
+              // limpa campos quando troca o status
+              setSelectedFile(null);
+              setJustificativa("");
+            }}
             style={{
               padding: 12,
               width: "100%",
               borderRadius: 12,
               marginBottom: 10,
+              boxSizing: "border-box",
             }}
           >
             <option value="entregue">Entregue</option>
             <option value="nao_realizada">Não entregue</option>
           </select>
 
-          {/* ===== NÃO ENTREGUE ===== */}
-          {deliveryStatus === "nao_realizada" && (
-            <textarea
-              placeholder="Informe o motivo da não entrega..."
-              value={justificativa}
-              onChange={(e) => setJustificativa(e.target.value)}
-              style={{
-                width: "100%",
-                padding: 12,
-                borderRadius: 12,
-                marginBottom: 10,
-                minHeight: 80,
-              }}
-            />
+          {/* =========================
+              ENTREGUE → FOTO + BOTÃO
+             ========================= */}
+          {deliveryStatus === "entregue" && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 6 }}>
+                  Foto do recebimento (obrigatório):
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <button
+                style={{
+                  padding: "14px 12px",
+                  width: "100%",
+                  borderRadius: 12,
+                  fontWeight: 900,
+                }}
+                disabled={!canSendEntregue}
+                onClick={async () => {
+                  const ok = await enviarFotoEStatus();
+                  if (!ok) return;
+
+                  setShowFinish(false);
+                  const next = await reloadStops();
+                  if (next) openInWazeFromStop(next);
+                }}
+              >
+                Enviar foto e encerrar entrega
+              </button>
+            </div>
           )}
 
-          <label style={{ display: "block", marginBottom: 6 }}>
-            Foto do recebimento:
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-            style={{ width: "100%", marginBottom: 10 }}
-          />
+          {/* =========================
+              NÃO ENTREGUE → TEXTO + BOTÃO
+             ========================= */}
+          {deliveryStatus === "nao_realizada" && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", marginBottom: 6 }}>
+                  Justificativa (obrigatório):
+                </label>
+                <textarea
+                  placeholder="Informe o motivo da não entrega..."
+                  value={justificativa}
+                  onChange={(e) => setJustificativa(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: 12,
+                    borderRadius: 12,
+                    minHeight: 90,
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <button
+                style={{
+                  padding: "14px 12px",
+                  width: "100%",
+                  borderRadius: 12,
+                  fontWeight: 900,
+                }}
+                disabled={!canSendNaoEntregue}
+                onClick={async () => {
+                  const ok = await enviarFotoEStatus();
+                  if (!ok) return;
+
+                  setShowFinish(false);
+                  const next = await reloadStops();
+                  if (next) openInWazeFromStop(next);
+                }}
+              >
+                Enviar justificativa e encerrar entrega
+              </button>
+            </div>
+          )}
 
           <button
             style={{
-              padding: "14px 12px",
-              width: "100%",
-              borderRadius: 12,
-              fontWeight: 900,
-            }}
-            disabled={!currentStop}
-            onClick={async () => {
-              const ok = await enviarFotoEStatus();
-              if (!ok) return;
-
-              // volta para principal, recarrega e abre waze da próxima
-              setShowFinish(false);
-              const next = await reloadStops();
-              if (next) openInWazeFromStop(next);
-            }}
-          >
-            Enviar foto + status
-          </button>
-
-          <button
-            style={{
-              marginTop: 10,
+              marginTop: 12,
               padding: "12px 12px",
               width: "100%",
               borderRadius: 12,
@@ -515,6 +559,7 @@ export default function DriverTracker() {
           <div>
             <strong>Último envio:</strong> {lastSent ?? "—"}
           </div>
+
           {stopsMsg && (
             <div
               style={{ padding: 10, borderRadius: 12, background: "#f9fafb" }}
@@ -597,6 +642,7 @@ export default function DriverTracker() {
               setUploadMsg("");
               setDeliveryStatus("entregue");
               setSelectedFile(null);
+              setJustificativa("");
               setShowFinish(true);
             }}
           >
