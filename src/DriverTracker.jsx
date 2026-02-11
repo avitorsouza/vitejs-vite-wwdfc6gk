@@ -156,7 +156,7 @@ export default function DriverTracker() {
       }))
       .filter(
         (d) =>
-          d?.status === "pendente" &&
+          d?.status === "em_rota" &&
           Number.isFinite(d.lat) &&
           Number.isFinite(d.lng),
       );
