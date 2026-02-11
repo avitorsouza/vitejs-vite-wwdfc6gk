@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
 
 export default function ManualRoutePlanner({
@@ -19,10 +19,19 @@ export default function ManualRoutePlanner({
 
   const selectedCount = useMemo(() => selected.size, [selected]);
 
-  // garante um veículo disponível selecionado
-  useMemo(() => {
-    if (!selectedVehicleId && availableVehicles?.[0]?.id) {
-      setSelectedVehicleId(availableVehicles[0].id);
+  // garante um veículo disponível selecionado (do jeito certo)
+  useEffect(() => {
+    // Se o veículo selecionado não existe mais na lista disponível, escolhe o primeiro disponível
+    const stillAvailable = availableVehicles.some(
+      (v) => v.id === selectedVehicleId,
+    );
+
+    if (!selectedVehicleId || !stillAvailable) {
+      if (availableVehicles?.[0]?.id) {
+        setSelectedVehicleId(availableVehicles[0].id);
+      } else {
+        setSelectedVehicleId("");
+      }
     }
   }, [availableVehicles, selectedVehicleId]);
 
