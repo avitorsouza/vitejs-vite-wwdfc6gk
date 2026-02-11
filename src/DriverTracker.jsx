@@ -361,7 +361,7 @@ export default function DriverTracker() {
             }}
           >
             <option value="entregue">Entregue</option>
-            <option value="falhou">Não entregue (falhou)</option>
+            <option value="nao_realizada">Não entregue (falhou)</option>
             <option value="reagendado">Reagendado</option>
           </select>
 

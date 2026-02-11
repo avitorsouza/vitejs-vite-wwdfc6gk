@@ -235,9 +235,8 @@ export default function AdminMonitor() {
         .select(
           "id, cliente, endereco_completo, pedido, status, photo_url, completed_at, created_at",
         )
-        .in("status", ["pendente", "em_rota"])
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(200);
 
       if (!delErr && del) setDeliveries(del);
       channelDel = supabase
