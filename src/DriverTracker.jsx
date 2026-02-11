@@ -411,6 +411,7 @@ export default function DriverTracker() {
             <option value="nao_realizada">Não entregue</option>
           </select>
 
+          {/* ===== NÃO ENTREGUE ===== */}
           {deliveryStatus === "nao_realizada" && (
             <textarea
               placeholder="Informe o motivo da não entrega..."
