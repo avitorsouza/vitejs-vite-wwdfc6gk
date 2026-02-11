@@ -40,7 +40,8 @@ export default function DriverTracker() {
   const [deliveryStatus, setDeliveryStatus] = useState("entregue");
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadMsg, setUploadMsg] = useState("");
-
+  const [failureReason, setFailureReason] = useState("");
+  const [justificativa, setJustificativa] = useState("");
   const centerName = useMemo(() => "Motorista — Rota do Dia", []);
 
   // 1) Carregar usuário logado
@@ -233,53 +234,99 @@ export default function DriverTracker() {
         return false;
       }
 
-      if (!selectedFile) {
-        setUploadMsg("Selecione uma foto antes de enviar.");
-        return false;
+      // ✅ Regras obrigatórias
+      if (deliveryStatus === "entregue") {
+        if (!selectedFile) {
+          setUploadMsg(
+            "Para marcar como ENTREGUE, é obrigatório anexar a foto.",
+          );
+          return false;
+        }
       }
 
-      // Bucket do Supabase Storage (ajuste se o seu tiver outro nome)
-      const BUCKET =
-        import.meta.env.VITE_RECEIPT_BUCKET || "foto-do-recebimento";
-
-      const ext = (selectedFile.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${currentStop.id}/${Date.now()}.${ext}`;
-
-      // Upload
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, selectedFile, {
-          cacheControl: "3600",
-          upsert: true,
-        });
-
-      if (upErr) {
-        setUploadMsg("Erro ao enviar foto: " + upErr.message);
-        return false;
+      if (deliveryStatus === "nao_realizada") {
+        if (!failureReason?.trim()) {
+          setUploadMsg(
+            "Para marcar como NÃO ENTREGUE, é obrigatório informar a justificativa.",
+          );
+          return false;
+        }
       }
 
-      // Pegar URL pública
-      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      const photoUrl = pub?.publicUrl || null;
+      // =========================
+      // CASO 1: ENTREGUE → sobe foto e salva photo_url
+      // =========================
+      if (deliveryStatus === "entregue") {
+        const BUCKET =
+          import.meta.env.VITE_RECEIPT_BUCKET || "foto-do-recebimento";
 
-      // Atualizar entrega
-      const { error: updErr } = await supabase
-        .from("deliveries")
-        .update({
-          status: deliveryStatus,
-          photo_url: photoUrl,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", currentStop.id);
+        const ext = (selectedFile.name.split(".").pop() || "jpg").toLowerCase();
+        const path = `${currentStop.id}/${Date.now()}.${ext}`;
 
-      if (updErr) {
-        setUploadMsg("Erro ao salvar status: " + updErr.message);
-        return false;
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, selectedFile, {
+            cacheControl: "3600",
+            upsert: true,
+          });
+
+        if (upErr) {
+          setUploadMsg("Erro ao enviar foto: " + upErr.message);
+          return false;
+        }
+
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        const photoUrl = pub?.publicUrl || null;
+
+        const { error: updErr } = await supabase
+          .from("deliveries")
+          .update({
+            status: "entregue",
+            photo_url: photoUrl,
+            completed_at: new Date().toISOString(),
+            failure_reason: null,
+          })
+          .eq("id", currentStop.id);
+
+        if (updErr) {
+          setUploadMsg("Erro ao salvar status: " + updErr.message);
+          return false;
+        }
+
+        setUploadMsg("✅ Entrega concluída com foto!");
+        setSelectedFile(null);
+        setFailureReason("");
+        return true;
       }
 
-      setUploadMsg("✅ Enviado com sucesso!");
-      setSelectedFile(null);
-      return true;
+      // =========================
+      // CASO 2: NÃO ENTREGUE → salva justificativa e NÃO sobe foto
+      // =========================
+      if (deliveryStatus === "nao_realizada") {
+        const { error: updErr } = await supabase
+          .from("deliveries")
+          .update({
+            status: "nao_realizada",
+            completed_at: new Date().toISOString(),
+            failure_reason: failureReason.trim(),
+            photo_url: null,
+          })
+          .eq("id", currentStop.id);
+
+        if (updErr) {
+          setUploadMsg("Erro ao salvar status: " + updErr.message);
+          return false;
+        }
+
+        setUploadMsg("✅ Marcado como NÃO ENTREGUE (com justificativa).");
+        setSelectedFile(null);
+        setFailureReason("");
+        return true;
+      }
+
+      // fallback
+      setUploadMsg("Status inválido. Use 'entregue' ou 'nao_realizada'.");
+      return false;
     } catch (e) {
       setUploadMsg("Erro inesperado: " + String(e?.message || e));
       return false;
@@ -361,9 +408,23 @@ export default function DriverTracker() {
             }}
           >
             <option value="entregue">Entregue</option>
-            <option value="nao_realizada">Não entregue (falhou)</option>
-            <option value="reagendado">Reagendado</option>
+            <option value="nao_realizada">Não entregue</option>
           </select>
+
+          {deliveryStatus === "nao_realizada" && (
+            <textarea
+              placeholder="Informe o motivo da não entrega..."
+              value={justificativa}
+              onChange={(e) => setJustificativa(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 12,
+                borderRadius: 12,
+                marginBottom: 10,
+                minHeight: 80,
+              }}
+            />
+          )}
 
           <label style={{ display: "block", marginBottom: 6 }}>
             Foto do recebimento:
