@@ -524,6 +524,7 @@ export default function AdminMonitor() {
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {routeLine?.length > 1 && <Polyline positions={routeLine} />}
           {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>
               <Popup>

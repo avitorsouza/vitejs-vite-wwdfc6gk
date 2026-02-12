@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+} from "react-leaflet";
 import { supabase } from "./supabase";
 import ExcelImport from "./ExcelImport";
 import ManualRoutePlanner from "./ManualRoutePlanner";
@@ -33,6 +39,114 @@ export default function AdminMonitor() {
   const [routeMsg, setRouteMsg] = useState("");
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
+
+  // ===== Polyline Google (rota nas ruas) =====
+  const [routeLine, setRouteLine] = useState([]); // array de [lat,lng]
+  const [routeLineMsg, setRouteLineMsg] = useState("");
+
+  function decodePolyline(encoded) {
+    if (!encoded) return [];
+    let index = 0,
+      lat = 0,
+      lng = 0;
+    const coordinates = [];
+
+    while (index < encoded.length) {
+      let b,
+        shift = 0,
+        result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      coordinates.push([lat / 1e5, lng / 1e5]);
+    }
+    return coordinates;
+  }
+
+  async function drawRoutePolyline(routeId) {
+    try {
+      setRouteLineMsg("Desenhando rota (ruas)...");
+      setRouteLine([]);
+
+      // 1) pega depot_address da rota
+      const { data: routeRow, error: rErr } = await supabase
+        .from("routes")
+        .select("id, depot_address")
+        .eq("id", routeId)
+        .single();
+
+      if (rErr || !routeRow?.id) {
+        setRouteLineMsg(
+          "Erro ao buscar rota: " + (rErr?.message || "sem rota"),
+        );
+        return;
+      }
+
+      // 2) pega paradas + lat/lng na ordem atual
+      const { data: stops, error: sErr } = await supabase
+        .from("route_stops")
+        .select("stop_order, deliveries:delivery_id (id, lat, lng)")
+        .eq("route_id", routeId)
+        .order("stop_order", { ascending: true });
+
+      if (sErr) {
+        setRouteLineMsg("Erro ao buscar paradas: " + sErr.message);
+        return;
+      }
+
+      const points = (stops || [])
+        .map((x) => x?.deliveries)
+        .filter(
+          (d) => d?.id && Number.isFinite(d?.lat) && Number.isFinite(d?.lng),
+        )
+        .map((d) => ({ id: d.id, lat: d.lat, lng: d.lng }));
+
+      if (points.length < 2) {
+        setRouteLineMsg("Rota precisa de pelo menos 2 paradas com lat/lng.");
+        return;
+      }
+
+      // 3) chama backend para obter polyline real (sem re-otimizar aqui)
+      const resp = await fetch("/api/route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stops: points,
+          depot_address: routeRow.depot_address || null,
+          optimize: false, // desenhar no order atual do banco
+        }),
+      });
+
+      const j = await resp.json().catch(() => null);
+      if (!resp.ok || !j?.polyline) {
+        setRouteLineMsg(
+          "Falha ao gerar polyline: " + (j?.error || "erro desconhecido"),
+        );
+        return;
+      }
+
+      const coords = decodePolyline(j.polyline);
+      setRouteLine(coords);
+      setRouteLineMsg(coords.length ? "" : "Polyline vazia.");
+    } catch (e) {
+      setRouteLineMsg("Erro inesperado: " + String(e?.message || e));
+    }
+  }
 
   async function geocodificarPendentes() {
     setGeoMsg("");

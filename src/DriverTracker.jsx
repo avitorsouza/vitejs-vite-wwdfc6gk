@@ -72,6 +72,18 @@ export default function DriverTracker() {
     loadStops();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+  // Auto-refresh: recarrega paradas a cada 25s (pausa na tela de concluir)
+  useEffect(() => {
+    if (!user?.id) return;
+    if (showFinish) return;
+
+    const t = setInterval(() => {
+      reloadStops();
+    }, 25000);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, showFinish]);
 
   // 3) Para GPS quando sair da tela
   useEffect(() => {

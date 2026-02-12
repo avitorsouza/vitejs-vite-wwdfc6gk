@@ -310,6 +310,17 @@ export default function AdminRoutesSummary() {
       <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
         {rows.map(({ route, stops }) => {
           const v = route.vehicles;
+          const total = stops.length;
+          const entregues = stops.filter(
+            (s) => s?.delivery?.status === "entregue",
+          ).length;
+          const naoRealizadas = stops.filter(
+            (s) => s?.delivery?.status === "nao_realizada",
+          ).length;
+          const emRota = stops.filter(
+            (s) => s?.delivery?.status === "em_rota",
+          ).length;
+
           return (
             <div
               key={route.id}
@@ -323,6 +334,60 @@ export default function AdminRoutesSummary() {
               <div style={{ fontWeight: 900 }}>
                 🚚 {v?.name ?? "Veículo"} — {v?.plate ?? "—"}
               </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontWeight: 800,
+                  }}
+                >
+                  Total: {total}
+                </span>
+                <span
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontWeight: 800,
+                  }}
+                >
+                  Em rota: {emRota}
+                </span>
+                <span
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontWeight: 800,
+                  }}
+                >
+                  Entregues: {entregues}
+                </span>
+                <span
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontWeight: 800,
+                  }}
+                >
+                  Não realizadas: {naoRealizadas}
+                </span>
+              </div>
+
               <div style={{ fontSize: 13, opacity: 0.85 }}>
                 Rota: {route.id} • Criada:{" "}
                 {route.created_at
