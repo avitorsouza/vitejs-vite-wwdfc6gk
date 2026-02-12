@@ -130,17 +130,20 @@ export default function AdminRoutesSummary() {
 
       // 3) Atualizar stop_order no Supabase seguindo a ordem nova
       // j.order: [delivery_id, delivery_id, ...]
-      for (let i = 0; i < j.order.length; i++) {
-        const deliveryId = j.order[i];
-        const { error: upErr } = await supabase
-          .from("route_stops")
-          .update({ stop_order: i + 1 })
-          .eq("route_id", routeId)
-          .eq("delivery_id", deliveryId);
+      async function salvarNovaOrdemDaRota(routeId, orderedStops) {
+        // orderedStops precisa ser a lista FINAL na ordem correta
+        // Ex.: [{id, delivery_id, ...}] ou [{delivery_id, ...}]
+        const orderedDeliveryIds = orderedStops.map(
+          (s) => s.delivery_id || s.id,
+        );
 
-        if (upErr) {
-          setMsg("Erro ao atualizar ordem da rota: " + upErr.message);
-          return;
+        const { error } = await supabase.rpc("reorder_route_stops", {
+          p_route_id: routeId,
+          p_ordered_delivery_ids: orderedDeliveryIds,
+        });
+
+        if (error) {
+          throw new Error(error.message);
         }
       }
 

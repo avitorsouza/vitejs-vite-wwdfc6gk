@@ -457,14 +457,6 @@ export default function AdminMonitor() {
             </select>
           </label>
 
-          <button
-            onClick={gerarRotaOtimizada}
-            disabled={routeBusy}
-            style={{ padding: "12px 14px", borderRadius: 12, fontWeight: 700 }}
-          >
-            {routeBusy ? "Gerando rota..." : "Gerar rota otimizada (Google)"}
-          </button>
-
           {routeMsg && <div>{routeMsg}</div>}
         </div>
       </div>
