@@ -226,7 +226,7 @@ export default function AdminRoutesSummary() {
                   width: "100%",
                 }}
               >
-                {busy ? "Otimizando..." : "Otimizar rota (Google)"}
+                {busy ? "Otimizando..." : "Otimizar rota"}
               </button>
 
               {stops.length === 0 ? (
