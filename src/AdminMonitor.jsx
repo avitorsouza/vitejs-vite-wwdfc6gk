@@ -313,6 +313,37 @@ export default function AdminMonitor() {
     vehicleCacheRef.current.set(driverId, label);
     return label;
   }
+  async function desenharRotaAtivaDoVeiculo() {
+    try {
+      setRouteLineMsg("");
+      setRouteLine([]);
+
+      if (!selectedVehicleId) {
+        setRouteLineMsg("Selecione um veículo.");
+        return;
+      }
+
+      // pega rota ativa do veículo
+      const { data: r, error: rErr } = await supabase
+        .from("routes")
+        .select("id, status, created_at")
+        .eq("vehicle_id", selectedVehicleId)
+        .eq("status", "ativa")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (rErr || !r?.id) {
+        setRouteLineMsg("Nenhuma rota ativa encontrada para este veículo.");
+        return;
+      }
+
+      await drawRoutePolyline(r.id);
+    } catch (e) {
+      setRouteLineMsg("Erro inesperado: " + String(e?.message || e));
+    }
+  }
+
   const center = useMemo(() => [-3.119, -60.0217], []);
 
   useEffect(() => {
@@ -420,6 +451,13 @@ export default function AdminMonitor() {
       if (channelDel) supabase.removeChannel(channelDel);
     };
   }, []);
+  // quando a polyline mudar, limpa mensagem
+  useEffect(() => {
+    if (routeLine && routeLine.length > 0) {
+      setRouteLineMsg("");
+    }
+  }, [routeLine]);
+
   async function gerarRotaOtimizada() {
     try {
       setRouteMsg("");
@@ -570,6 +608,17 @@ export default function AdminMonitor() {
               ))}
             </select>
           </label>
+          <button
+            onClick={desenharRotaAtivaDoVeiculo}
+            disabled={routeBusy}
+            style={{ padding: "12px 14px", borderRadius: 12, fontWeight: 800 }}
+          >
+            Desenhar rota no mapa (rota ativa)
+          </button>
+
+          {routeLineMsg && (
+            <div style={{ fontSize: 13, opacity: 0.85 }}>{routeLineMsg}</div>
+          )}
 
           {routeMsg && <div>{routeMsg}</div>}
         </div>
@@ -652,6 +701,13 @@ export default function AdminMonitor() {
               </Popup>
             </Marker>
           ))}
+          {/* ===== POLYLINE (rota real nas ruas) ===== */}
+          {routeLine && routeLine.length > 0 && (
+            <Polyline
+              positions={routeLine}
+              pathOptions={{ weight: 5, opacity: 0.9 }}
+            />
+          )}
         </MapContainer>
       </div>
       <hr style={{ margin: "16px 0" }} />
