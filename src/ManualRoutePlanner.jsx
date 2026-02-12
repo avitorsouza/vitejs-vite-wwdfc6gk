@@ -11,6 +11,8 @@ export default function ManualRoutePlanner({
   const [selected, setSelected] = useState(new Set());
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [optimizedOrder, setOptimizedOrder] = useState(null);
+  const [optBusy, setOptBusy] = useState(false);
 
   const availableVehicles = useMemo(
     () => vehicles.filter((v) => !usedVehicleIds.has(v.id)),
@@ -47,6 +49,46 @@ export default function ManualRoutePlanner({
   function clearSelection() {
     setSelected(new Set());
   }
+  async function otimizarRotaGoogle() {
+    if (selected.size === 0) {
+      setMsg("Selecione entregas para otimizar.");
+      return;
+    }
+
+    setOptBusy(true);
+    setMsg("Otimizando rota no Google...");
+
+    try {
+      const selectedDeliveries = deliveries.filter((d) => selected.has(d.id));
+
+      const resp = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stops: selectedDeliveries.map((d) => ({
+            id: d.id,
+            lat: d.lat,
+            lng: d.lng,
+          })),
+        }),
+      });
+
+      const j = await resp.json();
+
+      if (!resp.ok) {
+        setMsg("Erro ao otimizar: " + (j.error || "desconhecido"));
+        return;
+      }
+
+      // ordem otimizada retornada do servidor
+      setOptimizedOrder(j.order);
+      setMsg("✅ Rota otimizada! Agora clique em CRIAR ROTA.");
+    } catch (e) {
+      setMsg("Erro ao otimizar: " + e.message);
+    } finally {
+      setOptBusy(false);
+    }
+  }
 
   async function criarRotaManual() {
     setMsg("");
@@ -81,7 +123,14 @@ export default function ManualRoutePlanner({
       }
 
       // 2) paradas na ordem da seleção em tela
-      const ordered = deliveries.filter((d) => selected.has(d.id));
+      let ordered = deliveries.filter((d) => selected.has(d.id));
+
+      // se já foi otimizado, usar a ordem otimizada
+      if (optimizedOrder) {
+        ordered = optimizedOrder
+          .map((id) => deliveries.find((d) => d.id === id))
+          .filter(Boolean);
+      }
 
       const stopsPayload = ordered.map((d, idx) => ({
         route_id: route.id,
@@ -155,6 +204,14 @@ export default function ManualRoutePlanner({
           flexWrap: "wrap",
         }}
       >
+        <button
+          onClick={otimizarRotaGoogle}
+          disabled={optBusy || selected.size === 0}
+          style={{ padding: "12px 12px", borderRadius: 12, fontWeight: 900 }}
+        >
+          {optBusy ? "Otimizando..." : "Otimizar rota (Google)"}
+        </button>
+
         <button
           onClick={criarRotaManual}
           disabled={busy || !selectedVehicleId}
