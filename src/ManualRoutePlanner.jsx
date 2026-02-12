@@ -150,7 +150,7 @@ export default function ManualRoutePlanner({
       const ids = ordered.map((d) => d.id);
       const { error: upErr } = await supabase
         .from("deliveries")
-        .update({ status: "Em Rota" })
+        .update({ status: "em_rota" })
         .in("id", ids);
 
       if (upErr) {
