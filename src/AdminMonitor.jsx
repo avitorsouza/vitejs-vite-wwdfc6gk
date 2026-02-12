@@ -39,11 +39,7 @@ export default function AdminMonitor() {
   const [routeMsg, setRouteMsg] = useState("");
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
-
-  // ===== Polyline Google (rota nas ruas) =====
-  // ===== Polylines Google (todas rotas ativas) =====
   const [activeRouteLines, setActiveRouteLines] = useState([]);
-  // cada item: { routeId, vehicleLabel, coords: [[lat,lng],...], color }
   const [routeLineMsg, setRouteLineMsg] = useState("");
 
   function decodePolyline(encoded) {
@@ -741,6 +737,7 @@ export default function AdminMonitor() {
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+
           {activeRouteLines.map((r) => (
             <Polyline
               key={r.routeId}
@@ -782,14 +779,11 @@ export default function AdminMonitor() {
               </Popup>
             </Marker>
           ))}
-          {/* ===== POLYLINE (rota real nas ruas) ===== */}
-          {routeLine && routeLine.length > 0 && (
-            <Polyline
-              positions={routeLine}
-              pathOptions={{ weight: 5, opacity: 0.9 }}
-            />
-          )}
         </MapContainer>
+
+        {routeLineMsg && (
+          <div style={{ marginTop: 8, opacity: 0.85 }}>{routeLineMsg}</div>
+        )}
       </div>
       <hr style={{ margin: "16px 0" }} />
 
