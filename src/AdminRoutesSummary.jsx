@@ -10,6 +10,106 @@ export default function AdminRoutesSummary() {
   useEffect(() => {
     load();
   }, []);
+  async function optimizeOneRoute(routeId) {
+    // 1) pegar paradas dessa rota (com lat/lng)
+    const { data: stops, error: sErr } = await supabase
+      .from("route_stops")
+      .select(
+        `
+      stop_order,
+      deliveries:delivery_id (id, lat, lng)
+    `,
+      )
+      .eq("route_id", routeId)
+      .order("stop_order", { ascending: true })
+      .limit(5000);
+
+    if (sErr) throw new Error("Erro ao buscar paradas: " + sErr.message);
+
+    const validStops = (stops || [])
+      .map((s) => ({
+        id: s.deliveries?.id,
+        lat: s.deliveries?.lat,
+        lng: s.deliveries?.lng,
+      }))
+      .filter((x) => x?.id && Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    if (validStops.length < 2) {
+      // nada para otimizar
+      return { ok: true, skipped: true, reason: "Poucas paradas" };
+    }
+
+    // 2) chamar sua API do Heroku
+    const resp = await fetch("/api/optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stops: validStops }),
+    });
+
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(json?.error || "Falha ao otimizar");
+
+    const order = json.order || [];
+    if (order.length < 2) {
+      return { ok: true, skipped: true, reason: "Ordem vazia" };
+    }
+
+    // 3) salvar a nova ordem via RPC (evita duplicate key)
+    const { error: rpcErr } = await supabase.rpc("reorder_route_stops", {
+      p_route_id: routeId,
+      p_ordered_delivery_ids: order,
+    });
+
+    if (rpcErr) throw new Error("Erro ao salvar ordem: " + rpcErr.message);
+
+    return { ok: true };
+  }
+
+  async function optimizeAllActiveRoutes() {
+    setBusy(true);
+    setMsg("");
+    try {
+      // pega as rotas ativas (as mesmas que o load usa)
+      const { data: routes, error: rErr } = await supabase
+        .from("routes")
+        .select("id, vehicle_id, status, created_at")
+        .eq("status", "ativa")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (rErr) {
+        setMsg("Erro ao carregar rotas ativas: " + rErr.message);
+        return;
+      }
+
+      const list = routes || [];
+      if (list.length === 0) {
+        setMsg("Nenhuma rota ativa para otimizar.");
+        return;
+      }
+
+      let okCount = 0;
+      let skipCount = 0;
+
+      for (let i = 0; i < list.length; i++) {
+        const routeId = list[i].id;
+        setMsg(`Otimizando ${i + 1}/${list.length}...`);
+
+        const result = await optimizeOneRoute(routeId);
+        if (result?.skipped) skipCount++;
+        else okCount++;
+      }
+
+      setMsg(
+        `✅ Otimização concluída. Otimizadas: ${okCount} • Puladas: ${skipCount}`,
+      );
+      await load(); // recarrega resumo já com stop_order atualizado
+    } catch (e) {
+      setMsg("❌ Erro ao otimizar todas: " + String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function load() {
     const { data: u } = await supabase.auth.getUser();
@@ -178,13 +278,27 @@ export default function AdminRoutesSummary() {
           Resumo — Entregas por caminhão (rotas ativas)
           <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>{who}</div>
         </div>
-        <button
-          onClick={load}
-          disabled={busy}
-          style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900 }}
-        >
-          {busy ? "Atualizando..." : "Atualizar"}
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={load}
+            disabled={busy}
+            style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900 }}
+          >
+            {busy ? "Atualizando..." : "Atualizar"}
+          </button>
+
+          <button
+            onClick={optimizeAllActiveRoutes}
+            disabled={busy || rows.length === 0}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              fontWeight: 900,
+            }}
+          >
+            {busy ? "Aguarde..." : "Otimizar todas (rotas ativas)"}
+          </button>
+        </div>
       </div>
 
       {msg && <div style={{ marginTop: 10, opacity: 0.9 }}>{msg}</div>}
