@@ -1,11 +1,26 @@
+// server.cjs
 const express = require("express");
 const path = require("path");
+
+// ---- fetch compat (Heroku/Node) ----
+// Node 18+ tem fetch global, mas deixamos um fallback seguro.
+let fetchFn = global.fetch;
+if (!fetchFn) {
+  // Se seu ambiente for Node < 18, instale: npm i node-fetch@2
+  // e descomente abaixo:
+  // fetchFn = require("node-fetch");
+  throw new Error(
+    "fetch não disponível. Use Node 18+ no Heroku (recomendado) ou instale node-fetch@2.",
+  );
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: "1mb" }));
 
-// ---- API: geocode (Google) ----
+// =========================================================
+// API: GEOCODE (Google)
+// =========================================================
 app.get("/api/geocode", async (req, res) => {
   try {
     const qRaw = req.query.q;
@@ -36,7 +51,7 @@ app.get("/api/geocode", async (req, res) => {
       "&key=" +
       encodeURIComponent(key);
 
-    const resp = await fetch(url);
+    const resp = await fetchFn(url);
     const data = await resp.json();
 
     if (data.status !== "OK" || !data.results || data.results.length === 0) {
@@ -45,6 +60,7 @@ app.get("/api/geocode", async (req, res) => {
         source: "google",
         status: data.status,
         query: q,
+        error_message: data.error_message || null,
       });
     }
 
@@ -72,52 +88,99 @@ app.get("/api/geocode", async (req, res) => {
     return res.status(500).json({ error: String(e?.message || e) });
   }
 });
+
+// =========================================================
+// API: OPTIMIZE (Google Directions)
+// - recebe: { depot_address?: string, stops: [{id, lat, lng}, ...] }
+// - retorna: { order: [id1, id2, ...] }
+// =========================================================
 app.post("/api/optimize", async (req, res) => {
   try {
-    const { stops } = req.body;
+    const { stops, depot_address } = req.body;
 
-    if (!stops?.length) {
-      return res.status(400).json({ error: "Sem paradas" });
+    if (!Array.isArray(stops) || stops.length < 2) {
+      return res.status(400).json({ error: "Precisa de pelo menos 2 paradas" });
     }
 
     const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) {
+      return res
+        .status(500)
+        .json({ error: "GOOGLE_MAPS_API_KEY não configurada" });
+    }
 
-    const origin = `${stops[0].lat},${stops[0].lng}`;
+    // Monta pontos como "lat,lng"
+    const points = stops
+      .filter(
+        (s) => s && s.id && Number.isFinite(s.lat) && Number.isFinite(s.lng),
+      )
+      .map((s) => ({ id: s.id, loc: `${s.lat},${s.lng}` }));
+
+    if (points.length < 2) {
+      return res.status(400).json({ error: "Paradas sem lat/lng suficiente" });
+    }
+
+    // Se você passou depot_address, usamos como origem/destino.
+    // Senão, usamos a 1ª parada como origem/destino (circuito).
+    const useDepot = Boolean(depot_address && String(depot_address).trim());
+    const origin = useDepot ? String(depot_address).trim() : points[0].loc;
+
     const destination = origin;
 
-    const waypoints = stops
-      .slice(1)
-      .map((s) => `${s.lat},${s.lng}`)
-      .join("|");
+    // Waypoints = todas as paradas se tiver depot, senão (exceto a 1ª)
+    const wpList = useDepot
+      ? points.map((p) => p.loc)
+      : points.slice(1).map((p) => p.loc);
+
+    // Se tiver só 1 waypoint (caso points.length === 2 e sem depot), ok.
+    const waypointsParam = `optimize:true|${wpList.join("|")}`;
 
     const url =
       `https://maps.googleapis.com/maps/api/directions/json?` +
-      `origin=${origin}&destination=${destination}` +
-      `&waypoints=optimize:true|${waypoints}` +
-      `&key=${key}`;
+      `origin=${encodeURIComponent(origin)}` +
+      `&destination=${encodeURIComponent(destination)}` +
+      `&waypoints=${encodeURIComponent(waypointsParam)}` +
+      `&key=${encodeURIComponent(key)}`;
 
-    const r = await fetch(url);
+    const r = await fetchFn(url);
     const j = await r.json();
 
     if (j.status !== "OK") {
-      return res.status(400).json({ error: j.status });
+      return res.status(400).json({
+        error: j.status,
+        details: j.error_message || null,
+      });
     }
 
-    const order = j.routes[0].waypoint_order.map((i) => stops[i + 1].id);
-    order.unshift(stops[0].id);
+    // waypoint_order refere-se à lista wpList
+    // Precisamos traduzir isso para ids.
+    const orderedIds = (j.routes?.[0]?.waypoint_order || [])
+      .map((idx) => {
+        const p = useDepot ? points[idx] : points[idx + 1];
+        return p?.id;
+      })
+      .filter(Boolean);
 
-    res.json({ order });
+    // Se NÃO tem depot, a primeira parada fixa (points[0]) entra antes
+    if (!useDepot) orderedIds.unshift(points[0].id);
+
+    return res.json({ order: orderedIds });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e?.message || String(e) });
   }
 });
 
-// ---- Static (Vite build) ----
+// =========================================================
+// Static (Vite build) + SPA fallback
+// =========================================================
 const distPath = path.join(__dirname, "dist");
 app.use(express.static(distPath));
 
-// SPA fallback (React Router / refresh não quebra)
-app.use((req, res) => {
+// IMPORTANTE: não interceptar /api/*
+app.get("*", (req, res) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ error: "API route not found" });
+  }
   res.sendFile(path.join(distPath, "index.html"));
 });
 

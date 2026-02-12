@@ -46,8 +46,9 @@ export default function AdminRoutesSummary() {
       const { data: stops, error: sErr } = await supabase
         .from("route_stops")
         .select(
-          "route_id, stop_order, deliveries:delivery_id (id, pedido, cliente, endereco_completo, status)",
+          "route_id, stop_order, deliveries:delivery_id (id, pedido, cliente, endereco_completo, status, lat, lng)",
         )
+
         .in("route_id", routeIds)
         .order("stop_order", { ascending: true })
         .limit(5000);
@@ -77,6 +78,76 @@ export default function AdminRoutesSummary() {
     } catch (e) {
       setMsg("Erro inesperado: " + String(e?.message || e));
       setRows([]);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function optimizeRoute(routeId) {
+    setBusy(true);
+    setMsg("");
+
+    try {
+      // 1) Pegar paradas da rota + lat/lng
+      const { data: rs, error: rsErr } = await supabase
+        .from("route_stops")
+        .select(
+          "delivery_id, stop_order, deliveries:delivery_id (id, lat, lng)",
+        )
+        .eq("route_id", routeId)
+        .order("stop_order", { ascending: true });
+
+      if (rsErr) {
+        setMsg("Erro ao carregar paradas da rota: " + rsErr.message);
+        return;
+      }
+
+      const stops = (rs || [])
+        .map((x) => x.deliveries)
+        .filter((d) => d && Number.isFinite(d.lat) && Number.isFinite(d.lng))
+        .map((d) => ({ id: d.id, lat: d.lat, lng: d.lng }));
+
+      if (stops.length < 2) {
+        setMsg("Precisa de pelo menos 2 entregas com lat/lng para otimizar.");
+        return;
+      }
+
+      // 2) Chamar o otimizador no Heroku (/api/optimize)
+      const resp = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          depot_address: "AV. TEFÉ, 2840 - JAPIIM - MANAUS",
+          stops,
+        }),
+      });
+
+      const j = await resp.json().catch(() => null);
+
+      if (!resp.ok || !j?.order?.length) {
+        setMsg("Falha ao otimizar: " + (j?.error || "resposta inválida"));
+        return;
+      }
+
+      // 3) Atualizar stop_order no Supabase seguindo a ordem nova
+      // j.order: [delivery_id, delivery_id, ...]
+      for (let i = 0; i < j.order.length; i++) {
+        const deliveryId = j.order[i];
+        const { error: upErr } = await supabase
+          .from("route_stops")
+          .update({ stop_order: i + 1 })
+          .eq("route_id", routeId)
+          .eq("delivery_id", deliveryId);
+
+        if (upErr) {
+          setMsg("Erro ao atualizar ordem da rota: " + upErr.message);
+          return;
+        }
+      }
+
+      setMsg("✅ Rota otimizada com sucesso!");
+      await load(); // recarrega UI
+    } catch (e) {
+      setMsg("Erro inesperado ao otimizar: " + String(e?.message || e));
     } finally {
       setBusy(false);
     }
@@ -141,6 +212,19 @@ export default function AdminRoutesSummary() {
                   ? new Date(route.created_at).toLocaleString()
                   : "—"}
               </div>
+              <button
+                onClick={() => optimizeRoute(route.id)}
+                disabled={busy}
+                style={{
+                  marginTop: 10,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  fontWeight: 900,
+                  width: "100%",
+                }}
+              >
+                {busy ? "Otimizando..." : "Otimizar rota (Google)"}
+              </button>
 
               {stops.length === 0 ? (
                 <div style={{ marginTop: 8, opacity: 0.85 }}>
