@@ -205,14 +205,6 @@ export default function ManualRoutePlanner({
         }}
       >
         <button
-          onClick={otimizarRotaGoogle}
-          disabled={optBusy || selected.size === 0}
-          style={{ padding: "12px 12px", borderRadius: 12, fontWeight: 900 }}
-        >
-          {optBusy ? "Otimizando..." : "Otimizar rota (Google)"}
-        </button>
-
-        <button
           onClick={criarRotaManual}
           disabled={busy || !selectedVehicleId}
           style={{ padding: "12px 12px", borderRadius: 12, fontWeight: 900 }}
