@@ -329,20 +329,6 @@ export default function AdminRoutesSummary() {
                   ? new Date(route.created_at).toLocaleString()
                   : "—"}
               </div>
-              <button
-                onClick={() => optimizeRoute(route.id)}
-                disabled={busy}
-                style={{
-                  marginTop: 10,
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  fontWeight: 900,
-                  width: "100%",
-                }}
-              >
-                {busy ? "Otimizando..." : "Otimizar rota"}
-              </button>
-
               {stops.length === 0 ? (
                 <div style={{ marginTop: 8, opacity: 0.85 }}>
                   Sem entregas nessa rota.
