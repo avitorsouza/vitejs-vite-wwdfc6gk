@@ -176,11 +176,9 @@ app.post("/api/optimize", async (req, res) => {
 const distPath = path.join(__dirname, "dist");
 app.use(express.static(distPath));
 
-// IMPORTANTE: não interceptar /api/*
-app.get("*", (req, res) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "API route not found" });
-  }
+// SPA fallback (React Router / refresh não quebra)
+// ⚠️ NÃO use app.get("*") no Express 5
+app.use((req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
