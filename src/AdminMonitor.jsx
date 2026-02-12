@@ -41,7 +41,9 @@ export default function AdminMonitor() {
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
 
   // ===== Polyline Google (rota nas ruas) =====
-  const [routeLine, setRouteLine] = useState([]); // array de [lat,lng]
+  // ===== Polylines Google (todas rotas ativas) =====
+  const [activeRouteLines, setActiveRouteLines] = useState([]);
+  // cada item: { routeId, vehicleLabel, coords: [[lat,lng],...], color }
   const [routeLineMsg, setRouteLineMsg] = useState("");
 
   function decodePolyline(encoded) {
@@ -77,74 +79,122 @@ export default function AdminMonitor() {
     }
     return coordinates;
   }
+  const ROUTE_COLORS = [
+    "#2563eb",
+    "#16a34a",
+    "#dc2626",
+    "#9333ea",
+    "#ea580c",
+    "#0891b2",
+    "#ca8a04",
+    "#4f46e5",
+    "#059669",
+    "#be123c",
+  ];
 
-  async function drawRoutePolyline(routeId) {
+  function colorForIndex(i) {
+    return ROUTE_COLORS[i % ROUTE_COLORS.length];
+  }
+
+  async function loadAllActiveRoutesPolylines() {
     try {
-      setRouteLineMsg("Desenhando rota (ruas)...");
-      setRouteLine([]);
+      setRouteLineMsg("Desenhando rotas ativas (ruas)...");
+      setActiveRouteLines([]);
 
-      // 1) pega depot_address da rota
-      const { data: routeRow, error: rErr } = await supabase
+      // 1) buscar rotas ativas + veículo
+      const { data: routes, error: rErr } = await supabase
         .from("routes")
-        .select("id, depot_address")
-        .eq("id", routeId)
-        .single();
+        .select(
+          "id, depot_address, vehicle_id, created_at, vehicles:vehicle_id (name, plate)",
+        )
+        .eq("status", "ativa")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-      if (rErr || !routeRow?.id) {
-        setRouteLineMsg(
-          "Erro ao buscar rota: " + (rErr?.message || "sem rota"),
-        );
+      if (rErr) {
+        setRouteLineMsg("Erro ao buscar rotas ativas: " + rErr.message);
         return;
       }
 
-      // 2) pega paradas + lat/lng na ordem atual
+      if (!routes || routes.length === 0) {
+        setRouteLineMsg("Nenhuma rota ativa para desenhar.");
+        return;
+      }
+
+      // 2) buscar paradas de todas as rotas
+      const routeIds = routes.map((r) => r.id);
+
       const { data: stops, error: sErr } = await supabase
         .from("route_stops")
-        .select("stop_order, deliveries:delivery_id (id, lat, lng)")
-        .eq("route_id", routeId)
-        .order("stop_order", { ascending: true });
+        .select("route_id, stop_order, deliveries:delivery_id (id, lat, lng)")
+        .in("route_id", routeIds)
+        .order("stop_order", { ascending: true })
+        .limit(10000);
 
       if (sErr) {
         setRouteLineMsg("Erro ao buscar paradas: " + sErr.message);
         return;
       }
 
-      const points = (stops || [])
-        .map((x) => x?.deliveries)
-        .filter(
-          (d) => d?.id && Number.isFinite(d?.lat) && Number.isFinite(d?.lng),
-        )
-        .map((d) => ({ id: d.id, lat: d.lat, lng: d.lng }));
-
-      if (points.length < 2) {
-        setRouteLineMsg("Rota precisa de pelo menos 2 paradas com lat/lng.");
-        return;
+      // 3) agrupar stops por rota
+      const byRoute = new Map();
+      for (const r of routes) byRoute.set(r.id, []);
+      for (const s of stops || []) {
+        const d = s?.deliveries;
+        if (!d?.id || !Number.isFinite(d.lat) || !Number.isFinite(d.lng))
+          continue;
+        if (!byRoute.has(s.route_id)) byRoute.set(s.route_id, []);
+        byRoute
+          .get(s.route_id)
+          .push({ id: d.id, lat: d.lat, lng: d.lng, stop_order: s.stop_order });
       }
 
-      // 3) chama backend para obter polyline real (sem re-otimizar aqui)
-      const resp = await fetch("/api/route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stops: points,
-          depot_address: routeRow.depot_address || null,
-          optimize: false, // desenhar no order atual do banco
-        }),
-      });
-
-      const j = await resp.json().catch(() => null);
-      if (!resp.ok || !j?.polyline) {
-        setRouteLineMsg(
-          "Falha ao gerar polyline: " + (j?.error || "erro desconhecido"),
+      // 4) chamar /api/route para cada rota (gera polyline real)
+      const lines = [];
+      for (let i = 0; i < routes.length; i++) {
+        const r = routes[i];
+        const points = (byRoute.get(r.id) || []).sort(
+          (a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0),
         );
-        return;
+
+        if (points.length < 2) continue;
+
+        const resp = await fetch("/api/route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stops: points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng })),
+            depot_address: r.depot_address || null,
+            optimize: false, // desenha exatamente na ordem do banco
+          }),
+        });
+
+        const j = await resp.json().catch(() => null);
+        if (!resp.ok || !j?.polyline) continue;
+
+        const coords = decodePolyline(j.polyline);
+        if (!coords.length) continue;
+
+        const vehicleLabel = r?.vehicles
+          ? `${r.vehicles.name ?? "Veículo"} — ${r.vehicles.plate ?? "—"}`
+          : `Veículo ${r.vehicle_id}`;
+
+        lines.push({
+          routeId: r.id,
+          vehicleLabel,
+          coords,
+          color: colorForIndex(i),
+        });
       }
 
-      const coords = decodePolyline(j.polyline);
-      setRouteLine(coords);
-      setRouteLineMsg(coords.length ? "" : "Polyline vazia.");
+      setActiveRouteLines(lines);
+      setRouteLineMsg(
+        lines.length ? "" : "Não consegui gerar polyline para as rotas ativas.",
+      );
     } catch (e) {
-      setRouteLineMsg("Erro inesperado: " + String(e?.message || e));
+      setRouteLineMsg(
+        "Erro inesperado ao desenhar rotas: " + String(e?.message || e),
+      );
     }
   }
 
@@ -451,6 +501,19 @@ export default function AdminMonitor() {
       if (channelDel) supabase.removeChannel(channelDel);
     };
   }, []);
+  useEffect(() => {
+    // desenha ao abrir
+    loadAllActiveRoutesPolylines();
+
+    // e atualiza a cada 30s
+    const t = setInterval(() => {
+      loadAllActiveRoutesPolylines();
+    }, 30000);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // quando a polyline mudar, limpa mensagem
   useEffect(() => {
     if (routeLine && routeLine.length > 0) {
@@ -678,6 +741,24 @@ export default function AdminMonitor() {
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {activeRouteLines.map((r) => (
+            <Polyline
+              key={r.routeId}
+              positions={r.coords}
+              pathOptions={{ color: r.color, weight: 5, opacity: 0.85 }}
+            >
+              <Popup>
+                <div style={{ fontWeight: 900 }}>Rota ativa</div>
+                <div>
+                  <strong>Veículo:</strong> {r.vehicleLabel}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.85 }}>
+                  <strong>ID:</strong> {r.routeId}
+                </div>
+              </Popup>
+            </Polyline>
+          ))}
+
           {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>
               <Popup>
