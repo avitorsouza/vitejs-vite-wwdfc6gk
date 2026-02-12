@@ -235,7 +235,7 @@ export default function AdminMonitor() {
         .select(
           "id, cliente, endereco_completo, pedido, status, photo_url, completed_at, created_at",
         )
-        .in("status", ["pendente", "Em Rota"])
+        .in("status", ["pendente", "Em_rota"])
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -321,7 +321,7 @@ export default function AdminMonitor() {
       const { data: pend, error: pendErr } = await supabase
         .from("deliveries")
         .select("id, pedido, cliente, endereco_completo, lat, lng, status")
-        .in("status", ["Em Rota", "pendente"])
+        .in("status", ["em_rota", "pendente"])
         .not("lat", "is", null)
         .not("lng", "is", null)
         .order("created_at", { ascending: true })
