@@ -1,3 +1,4 @@
+import AdminRoutesSummary from "./AdminRoutesSummary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
@@ -7,8 +8,6 @@ import {
   Polyline,
 } from "react-leaflet";
 import { supabase } from "./supabase";
-import ExcelImport from "./ExcelImport";
-import ManualRoutePlanner from "./ManualRoutePlanner";
 
 function groupLatestByDriver(rows) {
   const map = new Map();
@@ -479,114 +478,21 @@ export default function AdminMonitor() {
 
   return (
     <div style={{ fontFamily: "Arial", padding: 16 }}>
-      <h2>Painel Administrativo — Caminhões ao vivo</h2>
+      <h2 style={{ margin: 0 }}>Monitor — Rotas ativas no mapa</h2>
 
-      <p>
-        <strong>Entregas carregadas:</strong> {deliveries?.length ?? 0}
-      </p>
-      <p>
-        <strong>Status:</strong> {status}
-      </p>
-
-      <ExcelImport
-        onImported={async () => {
-          const { data: del, error: delErr } = await supabase
-            .from("deliveries")
-            .select(
-              "id, pedido, cliente, endereco_completo, status, photo_url, completed_at, created_at",
-            )
-            .order("created_at", { ascending: false })
-            .limit(50);
-
-          if (!delErr && del) setDeliveries(del);
-          loadAllActiveRoutesPolylines();
-        }}
-      />
-
+      {/* Resumo — Entregas por caminhão (rotas ativas) */}
       <div style={{ marginTop: 12 }}>
-        <ManualRoutePlanner
-          onRouteCreated={async () => {
-            const { data: del, error: delErr } = await supabase
-              .from("deliveries")
-              .select(
-                "id, pedido, cliente, endereco_completo, status, photo_url, completed_at, created_at",
-              )
-              .order("created_at", { ascending: false })
-              .limit(50);
-
-            if (!delErr && del) setDeliveries(del);
-            loadAllActiveRoutesPolylines();
-          }}
-        />
+        <AdminRoutesSummary />
       </div>
 
+      {/* MAPA */}
       <div
         style={{
-          marginTop: 10,
-          padding: 12,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-        }}
-      >
-        <h3>Rotas no mapa (automático)</h3>
-        <div style={{ fontSize: 13, opacity: 0.85 }}>
-          O sistema desenha todas as <strong>rotas ativas</strong> e atualiza a
-          cada 30 segundos.
-        </div>
-        {routeLineMsg && (
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
-            {routeLineMsg}
-          </div>
-        )}
-        {routeMsg && <div style={{ marginTop: 8 }}>{routeMsg}</div>}
-      </div>
-
-      <div
-        style={{
-          marginTop: 10,
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-        }}
-      >
-        <button
-          onClick={geocodificarPendentes}
-          disabled={geoBusy}
-          style={{ padding: "10px 14px" }}
-        >
-          {geoBusy ? "Geocodificando..." : "Geocodificar endereços"}
-        </button>
-        {geoMsg && <span>{geoMsg}</span>}
-      </div>
-
-      {geoFails.length > 0 && (
-        <div
-          style={{
-            marginTop: 10,
-            padding: 10,
-            border: "1px solid #eee",
-            borderRadius: 10,
-          }}
-        >
-          <strong>Falharam ({geoFails.length}):</strong>
-          <ul>
-            {geoFails.map((f, i) => (
-              <li key={i}>{f.endereco}</li>
-            ))}
-          </ul>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>
-            Dica: acrescente número, bairro e “Manaus - AM, Brasil”.
-          </div>
-        </div>
-      )}
-
-      <div
-        style={{
-          height: 520,
+          marginTop: 12,
+          height: 620,
           borderRadius: 12,
           overflow: "hidden",
           border: "1px solid #ddd",
-          marginTop: 10,
         }}
       >
         <MapContainer
@@ -599,7 +505,7 @@ export default function AdminMonitor() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {/* ROTAS ATIVAS (cores diferentes) */}
+          {/* Polylines das rotas ativas */}
           {activeRouteLines.map((r) => (
             <Polyline
               key={r.routeId}
@@ -618,7 +524,7 @@ export default function AdminMonitor() {
             </Polyline>
           ))}
 
-          {/* MOTORISTAS */}
+          {/* Marcadores dos motoristas */}
           {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>
               <Popup>
@@ -645,47 +551,9 @@ export default function AdminMonitor() {
         </MapContainer>
       </div>
 
-      <hr style={{ margin: "16px 0" }} />
-
-      <h3>Entregas (últimas 50)</h3>
-
-      <div style={{ display: "grid", gap: 10 }}>
-        {deliveries.map((d) => (
-          <div
-            key={d.id}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 10,
-              padding: 12,
-            }}
-          >
-            <div>
-              <strong>Pedido:</strong> {d.pedido}
-            </div>
-            <div>
-              <strong>Cliente:</strong> {d.cliente}
-            </div>
-            <div>
-              <strong>Endereço:</strong> {d.endereco_completo}
-            </div>
-            <div>
-              <strong>Status:</strong> {d.status}
-            </div>
-            <div>
-              <strong>Concluída:</strong>{" "}
-              {d.completed_at ? new Date(d.completed_at).toLocaleString() : "—"}
-            </div>
-
-            {d.photo_url ? (
-              <a href={d.photo_url} target="_blank" rel="noreferrer">
-                Abrir foto
-              </a>
-            ) : (
-              <div style={{ opacity: 0.7 }}>Sem foto</div>
-            )}
-          </div>
-        ))}
-      </div>
+      {routeLineMsg && (
+        <div style={{ marginTop: 10, opacity: 0.85 }}>{routeLineMsg}</div>
+      )}
     </div>
   );
 }
