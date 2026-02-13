@@ -1,4 +1,5 @@
 import AdminRoutesSummary from "./AdminRoutesSummary";
+import DriverVehicleLinker from "./DriverVehicleLinker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
@@ -495,6 +496,7 @@ export default function AdminMonitor() {
           border: "1px solid #ddd",
         }}
       >
+        <DriverVehicleLinker />
         <MapContainer
           center={center}
           zoom={12}
