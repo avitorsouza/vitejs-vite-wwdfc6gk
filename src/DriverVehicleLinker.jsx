@@ -33,7 +33,7 @@ export default function DriverVehicleLinker() {
       // motoristas (ajuste o select conforme sua tabela profiles)
       const { data: ds, error: dErr } = await supabase
         .from("profiles")
-        .select("id, name, email")
+        .select("id, name")
         .order("name", { ascending: true })
         .limit(500);
 
