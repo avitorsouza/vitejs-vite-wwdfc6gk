@@ -31,14 +31,17 @@ export default function AdminMonitor() {
   const nameCacheRef = useRef(new Map());
   const [driverVehicles, setDriverVehicles] = useState({});
   const vehicleCacheRef = useRef(new Map());
+
   const [deliveries, setDeliveries] = useState([]);
   const [geoMsg, setGeoMsg] = useState("");
   const [geoBusy, setGeoBusy] = useState(false);
   const [geoFails, setGeoFails] = useState([]);
-  const [routeBusy, setRouteBusy] = useState(false);
+
   const [routeMsg, setRouteMsg] = useState("");
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
+
+  // ===== POLYLINES DAS ROTAS ATIVAS (cores diferentes) =====
   const [activeRouteLines, setActiveRouteLines] = useState([]);
   const [routeLineMsg, setRouteLineMsg] = useState("");
 
@@ -75,6 +78,7 @@ export default function AdminMonitor() {
     }
     return coordinates;
   }
+
   const ROUTE_COLORS = [
     "#2563eb",
     "#16a34a",
@@ -97,7 +101,7 @@ export default function AdminMonitor() {
       setRouteLineMsg("Desenhando rotas ativas (ruas)...");
       setActiveRouteLines([]);
 
-      // 1) buscar rotas ativas + veículo
+      // 1) rotas ativas + veículo
       const { data: routes, error: rErr } = await supabase
         .from("routes")
         .select(
@@ -117,7 +121,7 @@ export default function AdminMonitor() {
         return;
       }
 
-      // 2) buscar paradas de todas as rotas
+      // 2) paradas dessas rotas
       const routeIds = routes.map((r) => r.id);
 
       const { data: stops, error: sErr } = await supabase
@@ -132,7 +136,7 @@ export default function AdminMonitor() {
         return;
       }
 
-      // 3) agrupar stops por rota
+      // 3) agrupar por route_id
       const byRoute = new Map();
       for (const r of routes) byRoute.set(r.id, []);
       for (const s of stops || []) {
@@ -140,12 +144,15 @@ export default function AdminMonitor() {
         if (!d?.id || !Number.isFinite(d.lat) || !Number.isFinite(d.lng))
           continue;
         if (!byRoute.has(s.route_id)) byRoute.set(s.route_id, []);
-        byRoute
-          .get(s.route_id)
-          .push({ id: d.id, lat: d.lat, lng: d.lng, stop_order: s.stop_order });
+        byRoute.get(s.route_id).push({
+          id: d.id,
+          lat: d.lat,
+          lng: d.lng,
+          stop_order: s.stop_order,
+        });
       }
 
-      // 4) chamar /api/route para cada rota (gera polyline real)
+      // 4) gerar polyline real via /api/route
       const lines = [];
       for (let i = 0; i < routes.length; i++) {
         const r = routes[i];
@@ -199,7 +206,6 @@ export default function AdminMonitor() {
     setGeoBusy(true);
 
     try {
-      // 1) pega entregas sem lat/lng
       const { data: list, error } = await supabase
         .from("deliveries")
         .select("id, rua, numero, bairro, cidade, estado, endereco_completo")
@@ -215,7 +221,7 @@ export default function AdminMonitor() {
         setGeoMsg("✅ Nenhuma entrega pendente para geocodificar.");
         return;
       }
-      // 🔎 filtra apenas entregas com dados mínimos para geocodificar
+
       const valid = list.filter(
         (d) =>
           (d.endereco_completo && String(d.endereco_completo).trim()) ||
@@ -235,7 +241,6 @@ export default function AdminMonitor() {
 
       for (const d of valid) {
         try {
-          // rate limit (respeito ao Nominatim)
           await new Promise((r) => setTimeout(r, 1100));
 
           const rua = String(d.rua || "").trim();
@@ -244,9 +249,7 @@ export default function AdminMonitor() {
           const cidade = String(d.cidade || "Manaus").trim() || "Manaus";
           const estado = String(d.estado || "AM").trim() || "AM";
 
-          // se já tiver endereco_completo, usa ele; senão monta na hora
           let qBase = String(d.endereco_completo || "").trim();
-
           if (!qBase) {
             qBase = [rua, numero, bairro, `${cidade} - ${estado}`, "Brasil"]
               .filter(Boolean)
@@ -256,41 +259,37 @@ export default function AdminMonitor() {
           const q = qBase.replace(/\s+/g, " ").trim();
           const qFinal = /manaus/i.test(q) ? q : `${q}, Manaus - AM, Brasil`;
 
-          const base = import.meta.env.VITE_FUNCTIONS_BASE || "";
           const url = `/api/geocode?q=${encodeURIComponent(qFinal)}`;
-
           const resp = await fetch(url);
 
-          // Se a function não existe / deu erro, pare e mostre
           if (!resp.ok) {
             const txt = await resp.text();
             setGeoMsg(
-              `❌ Erro na função geocode (HTTP ${resp.status}). Exemplo: ${txt.slice(0, 120)}...`,
+              `❌ Erro na função geocode (HTTP ${resp.status}). Exemplo: ${txt.slice(
+                0,
+                120,
+              )}...`,
             );
             return;
           }
 
           const raw = await resp.text();
           let j = null;
-
           try {
             j = raw ? JSON.parse(raw) : null;
           } catch (e) {
-            setRouteMsg(
-              `❌ Resposta não-JSON do servidor (HTTP ${resp.status}). Exemplo: ${raw.slice(0, 160)}...`,
+            setGeoMsg(
+              `❌ Resposta não-JSON do servidor (HTTP ${resp.status}). Exemplo: ${raw.slice(
+                0,
+                160,
+              )}...`,
             );
-            return;
-          }
-
-          if (!j) {
-            setRouteMsg(`❌ Resposta vazia do servidor (HTTP ${resp.status}).`);
             return;
           }
 
           if (!j?.found || !Number.isFinite(j.lat) || !Number.isFinite(j.lng)) {
             fail++;
             fails.push({ endereco: qFinal });
-
             continue;
           }
 
@@ -299,25 +298,22 @@ export default function AdminMonitor() {
             .update({ lat: j.lat, lng: j.lng })
             .eq("id", d.id);
 
-          if (upErr) {
-            fail++;
-          } else {
-            ok++;
-          }
+          if (upErr) fail++;
+          else ok++;
         } catch (e) {
           fail++;
         }
       }
+
       setGeoFails(fails);
       setGeoMsg(`✅ Geocodificação finalizada: ${ok} ok, ${fail} falhas.`);
     } catch (e) {
-      setGeoMsg(
-        "❌ Erro inesperado na geocodificação: " + String(e?.message || e),
-      );
+      setGeoMsg("❌ Erro inesperado: " + String(e?.message || e));
     } finally {
       setGeoBusy(false);
     }
   }
+
   async function getDriverName(driverId) {
     const cached = nameCacheRef.current.get(driverId);
     if (cached) return cached;
@@ -332,6 +328,7 @@ export default function AdminMonitor() {
     nameCacheRef.current.set(driverId, name);
     return name;
   }
+
   async function getDriverVehicleLabel(driverId) {
     const cached = vehicleCacheRef.current.get(driverId);
     if (cached) return cached;
@@ -355,39 +352,8 @@ export default function AdminMonitor() {
       .single();
 
     const label = !vErr && v ? `${v.name} — ${v.plate}` : "—";
-
     vehicleCacheRef.current.set(driverId, label);
     return label;
-  }
-  async function desenharRotaAtivaDoVeiculo() {
-    try {
-      setRouteLineMsg("");
-      setRouteLine([]);
-
-      if (!selectedVehicleId) {
-        setRouteLineMsg("Selecione um veículo.");
-        return;
-      }
-
-      // pega rota ativa do veículo
-      const { data: r, error: rErr } = await supabase
-        .from("routes")
-        .select("id, status, created_at")
-        .eq("vehicle_id", selectedVehicleId)
-        .eq("status", "ativa")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (rErr || !r?.id) {
-        setRouteLineMsg("Nenhuma rota ativa encontrada para este veículo.");
-        return;
-      }
-
-      await drawRoutePolyline(r.id);
-    } catch (e) {
-      setRouteLineMsg("Erro inesperado: " + String(e?.message || e));
-    }
   }
 
   const center = useMemo(() => [-3.119, -60.0217], []);
@@ -410,17 +376,18 @@ export default function AdminMonitor() {
         return;
       }
 
-      setLatestRows(groupLatestByDriver(data));
-      for (const row of groupLatestByDriver(data)) {
+      const latest = groupLatestByDriver(data || []);
+      setLatestRows(latest);
+
+      for (const row of latest) {
         getDriverVehicleLabel(row.driver_id).then((label) => {
           setDriverVehicles((prev) => ({ ...prev, [row.driver_id]: label }));
         });
-      }
-      for (const row of groupLatestByDriver(data)) {
         getDriverName(row.driver_id).then((name) => {
           setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
         });
       }
+
       const { data: del, error: delErr } = await supabase
         .from("deliveries")
         .select(
@@ -430,6 +397,7 @@ export default function AdminMonitor() {
         .limit(200);
 
       if (!delErr && del) setDeliveries(del);
+
       channelDel = supabase
         .channel("realtime-deliveries")
         .on(
@@ -437,7 +405,6 @@ export default function AdminMonitor() {
           { event: "*", schema: "public", table: "deliveries" },
           (payload) => {
             const row = payload.new;
-
             setDeliveries((prev) => {
               const idx = prev.findIndex((d) => d.id === row.id);
               if (idx !== -1) {
@@ -450,7 +417,7 @@ export default function AdminMonitor() {
           },
         )
         .subscribe();
-      // carregar veículos para gerar rota
+
       const { data: vs, error: vsErr } = await supabase
         .from("vehicles")
         .select("id, name, plate")
@@ -462,6 +429,7 @@ export default function AdminMonitor() {
       }
 
       setStatus("Ao vivo ✅");
+
       channelLoc = supabase
         .channel("realtime-driver-locations")
         .on(
@@ -469,12 +437,14 @@ export default function AdminMonitor() {
           { event: "INSERT", schema: "public", table: "driver_locations" },
           (payload) => {
             const row = payload.new;
+
             getDriverVehicleLabel(row.driver_id).then((label) => {
               setDriverVehicles((prev) => ({
                 ...prev,
                 [row.driver_id]: label,
               }));
             });
+
             setLatestRows((prev) => {
               const copy = [...prev];
               const idx = copy.findIndex((x) => x.driver_id === row.driver_id);
@@ -482,6 +452,7 @@ export default function AdminMonitor() {
               copy[idx] = row;
               return copy;
             });
+
             getDriverName(row.driver_id).then((name) => {
               setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
             });
@@ -497,122 +468,26 @@ export default function AdminMonitor() {
       if (channelDel) supabase.removeChannel(channelDel);
     };
   }, []);
+
+  // desenhar rotas ativas automaticamente
   useEffect(() => {
-    // desenha ao abrir
     loadAllActiveRoutesPolylines();
-
-    // e atualiza a cada 30s
-    const t = setInterval(() => {
-      loadAllActiveRoutesPolylines();
-    }, 30000);
-
+    const t = setInterval(loadAllActiveRoutesPolylines, 30000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // quando a polyline mudar, limpa mensagem
-  useEffect(() => {
-    if (routeLine && routeLine.length > 0) {
-      setRouteLineMsg("");
-    }
-  }, [routeLine]);
-
-  async function gerarRotaOtimizada() {
-    try {
-      setRouteMsg("");
-      setRouteBusy(true);
-
-      if (!selectedVehicleId) {
-        setRouteMsg("Selecione um veículo.");
-        return;
-      }
-
-      // 1) pegar entregas pendentes com lat/lng
-      const { data: pend, error: pendErr } = await supabase
-        .from("deliveries")
-        .select("id, pedido, cliente, endereco_completo, lat, lng, status")
-        .in("status", ["em_rota", "pendente"])
-        .not("lat", "is", null)
-        .not("lng", "is", null)
-        .order("created_at", { ascending: true })
-        .limit(20);
-
-      if (pendErr) {
-        setRouteMsg("Erro buscando entregas: " + pendErr.message);
-        return;
-      }
-      if (!pend || pend.length < 2) {
-        setRouteMsg(
-          "Precisa de pelo menos 2 entregas pendentes geocodificadas.",
-        );
-        return;
-      }
-
-      // 2) chamar API do servidor para otimizar
-      const depot = { lat: -3.119, lng: -60.0217 }; // centro aproximado (depois refinamos para o endereço exato)
-      const stops = pend.map((d) => ({ id: d.id, lat: d.lat, lng: d.lng }));
-
-      const resp = await fetch("/api/optimize-route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ depot, stops }),
-      });
-
-      const j = await resp.json();
-      if (!j?.ok) {
-        setRouteMsg("Falha ao otimizar: " + (j?.status || "erro"));
-        return;
-      }
-
-      // 3) criar rota no banco
-      const depotAddress = "Av. Tefé, 2840 - Japiim, Manaus - AM";
-      const { data: routeRow, error: rErr } = await supabase
-        .from("routes")
-        .insert([
-          { vehicle_id: selectedVehicleId, depot_address: depotAddress },
-        ])
-        .select("*")
-        .single();
-
-      if (rErr || !routeRow?.id) {
-        setRouteMsg("Erro criando rota: " + (rErr?.message || "desconhecido"));
-        return;
-      }
-
-      // 4) inserir paradas ordenadas
-      const stopsRows = j.ordered.map((s) => ({
-        route_id: routeRow.id,
-        delivery_id: s.id,
-        stop_order: s.stop_order,
-        eta_seconds: s.eta_seconds ?? null,
-        leg_seconds: s.leg_seconds ?? null,
-      }));
-
-      const { error: sErr } = await supabase
-        .from("route_stops")
-        .insert(stopsRows);
-      if (sErr) {
-        setRouteMsg("Erro salvando paradas: " + sErr.message);
-        return;
-      }
-
-      setRouteMsg(`✅ Rota criada e otimizada! (${stopsRows.length} paradas)`);
-    } catch (e) {
-      setRouteMsg("Erro inesperado: " + String(e?.message || e));
-    } finally {
-      setRouteBusy(false);
-    }
-  }
-
   return (
     <div style={{ fontFamily: "Arial", padding: 16 }}>
       <h2>Painel Administrativo — Caminhões ao vivo</h2>
+
       <p>
         <strong>Entregas carregadas:</strong> {deliveries?.length ?? 0}
       </p>
       <p>
         <strong>Status:</strong> {status}
       </p>
+
       <ExcelImport
         onImported={async () => {
           const { data: del, error: delErr } = await supabase
@@ -624,8 +499,10 @@ export default function AdminMonitor() {
             .limit(50);
 
           if (!delErr && del) setDeliveries(del);
+          loadAllActiveRoutesPolylines();
         }}
       />
+
       <div style={{ marginTop: 12 }}>
         <ManualRoutePlanner
           onRouteCreated={async () => {
@@ -638,6 +515,7 @@ export default function AdminMonitor() {
               .limit(50);
 
             if (!delErr && del) setDeliveries(del);
+            loadAllActiveRoutesPolylines();
           }}
         />
       </div>
@@ -650,37 +528,17 @@ export default function AdminMonitor() {
           borderRadius: 12,
         }}
       >
-        <h3>Gerar rota (otimizada)</h3>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          <label>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>Veículo</div>
-            <select
-              value={selectedVehicleId}
-              onChange={(e) => setSelectedVehicleId(e.target.value)}
-              style={{ width: "100%", padding: 10, borderRadius: 10 }}
-            >
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name} — {v.plate}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            onClick={desenharRotaAtivaDoVeiculo}
-            disabled={routeBusy}
-            style={{ padding: "12px 14px", borderRadius: 12, fontWeight: 800 }}
-          >
-            Desenhar rota no mapa (rota ativa)
-          </button>
-
-          {routeLineMsg && (
-            <div style={{ fontSize: 13, opacity: 0.85 }}>{routeLineMsg}</div>
-          )}
-
-          {routeMsg && <div>{routeMsg}</div>}
+        <h3>Rotas no mapa (automático)</h3>
+        <div style={{ fontSize: 13, opacity: 0.85 }}>
+          O sistema desenha todas as <strong>rotas ativas</strong> e atualiza a
+          cada 30 segundos.
         </div>
+        {routeLineMsg && (
+          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
+            {routeLineMsg}
+          </div>
+        )}
+        {routeMsg && <div style={{ marginTop: 8 }}>{routeMsg}</div>}
       </div>
 
       <div
@@ -696,10 +554,11 @@ export default function AdminMonitor() {
           disabled={geoBusy}
           style={{ padding: "10px 14px" }}
         >
-          {geoBusy ? "Geocodificando..." : "Geocodificar endereços (OSM)"}
+          {geoBusy ? "Geocodificando..." : "Geocodificar endereços"}
         </button>
         {geoMsg && <span>{geoMsg}</span>}
       </div>
+
       {geoFails.length > 0 && (
         <div
           style={{
@@ -720,12 +579,14 @@ export default function AdminMonitor() {
           </div>
         </div>
       )}
+
       <div
         style={{
           height: 520,
           borderRadius: 12,
           overflow: "hidden",
           border: "1px solid #ddd",
+          marginTop: 10,
         }}
       >
         <MapContainer
@@ -738,6 +599,7 @@ export default function AdminMonitor() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
+          {/* ROTAS ATIVAS (cores diferentes) */}
           {activeRouteLines.map((r) => (
             <Polyline
               key={r.routeId}
@@ -756,6 +618,7 @@ export default function AdminMonitor() {
             </Polyline>
           ))}
 
+          {/* MOTORISTAS */}
           {latestRows.map((r) => (
             <Marker key={r.driver_id} position={[r.lat, r.lng]}>
               <Popup>
@@ -780,11 +643,8 @@ export default function AdminMonitor() {
             </Marker>
           ))}
         </MapContainer>
-
-        {routeLineMsg && (
-          <div style={{ marginTop: 8, opacity: 0.85 }}>{routeLineMsg}</div>
-        )}
       </div>
+
       <hr style={{ margin: "16px 0" }} />
 
       <h3>Entregas (últimas 50)</h3>
