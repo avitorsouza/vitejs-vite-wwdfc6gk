@@ -368,6 +368,7 @@ export default function AdminMonitor() {
       const { data, error } = await supabase
         .from("driver_locations")
         .select("*")
+        .order("created_at", { ascending: false })
         .limit(500);
 
       if (error) {
@@ -484,7 +485,7 @@ export default function AdminMonitor() {
       <div style={{ marginTop: 12 }}>
         <AdminRoutesSummary />
       </div>
-
+      <DriverVehicleLinker />
       {/* MAPA */}
       <div
         style={{
@@ -495,7 +496,6 @@ export default function AdminMonitor() {
           border: "1px solid #ddd",
         }}
       >
-        <DriverVehicleLinker />
         <MapContainer
           center={center}
           zoom={12}

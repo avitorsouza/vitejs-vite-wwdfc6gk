@@ -24,6 +24,7 @@ export default function DriverVehicleLinker() {
 
   useEffect(() => {
     loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAll() {
@@ -31,6 +32,7 @@ export default function DriverVehicleLinker() {
     setBusy(true);
     try {
       // motoristas (ajuste o select conforme sua tabela profiles)
+      // (removi email pq no seu banco não existe)
       const { data: ds, error: dErr } = await supabase
         .from("profiles")
         .select("id, name")
@@ -48,12 +50,11 @@ export default function DriverVehicleLinker() {
 
       if (vErr) throw vErr;
 
-      // vínculos
+      // vínculos (removi created_at pq no seu banco não existe)
       const { data: ls, error: lErr } = await supabase
         .from("driver_vehicle")
-        .select("driver_id, vehicle_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(1000);
+        .select("driver_id, vehicle_id")
+        .limit(2000);
 
       if (lErr) throw lErr;
 
@@ -77,19 +78,27 @@ export default function DriverVehicleLinker() {
 
     setBusy(true);
     try {
-      // upsert pelo driver_id (PK)
-      const { error } = await supabase
+      // ✅ Regra: 1 caminhão só pode ter 1 motorista
+      // Remove qualquer vínculo anterior desse caminhão
+      const { error: delVErr } = await supabase
+        .from("driver_vehicle")
+        .delete()
+        .eq("vehicle_id", vehicleId);
+
+      if (delVErr) throw delVErr;
+
+      // ✅ Regra: 1 motorista só pode ter 1 caminhão (upsert por driver_id)
+      const { error: upErr } = await supabase
         .from("driver_vehicle")
         .upsert([{ driver_id: driverId, vehicle_id: vehicleId }], {
           onConflict: "driver_id",
         });
 
-      if (error) throw error;
+      if (upErr) throw upErr;
 
       setMsg("✅ Vínculo salvo!");
       await loadAll();
     } catch (e) {
-      // Se der erro por "vehicle_id unique", significa que esse caminhão já tem motorista
       setMsg("Erro ao vincular: " + (e?.message || String(e)));
     } finally {
       setBusy(false);
@@ -141,7 +150,7 @@ export default function DriverVehicleLinker() {
           >
             {drivers.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name ?? d.email ?? d.id}
+                {d.name ?? d.id}
               </option>
             ))}
           </select>
@@ -203,15 +212,10 @@ export default function DriverVehicleLinker() {
                 >
                   <div>
                     <div style={{ fontWeight: 900 }}>
-                      👤 {d?.name ?? d?.email ?? l.driver_id}
+                      👤 {d?.name ?? l.driver_id}
                     </div>
                     <div style={{ opacity: 0.9 }}>
                       🚚 {v ? `${v.name} — ${v.plate}` : l.vehicle_id}
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      {l.created_at
-                        ? new Date(l.created_at).toLocaleString()
-                        : ""}
                     </div>
                   </div>
 
