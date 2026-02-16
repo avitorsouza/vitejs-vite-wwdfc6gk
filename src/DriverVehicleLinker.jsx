@@ -36,6 +36,7 @@ export default function DriverVehicleLinker() {
       const { data: ds, error: dErr } = await supabase
         .from("profiles")
         .select("id, name")
+        .eq("role", "motorista")
         .order("name", { ascending: true })
         .limit(500);
 
