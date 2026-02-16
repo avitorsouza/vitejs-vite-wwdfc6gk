@@ -368,7 +368,6 @@ export default function AdminMonitor() {
       const { data, error } = await supabase
         .from("driver_locations")
         .select("*")
-        .order("created_at", { ascending: false })
         .limit(500);
 
       if (error) {
