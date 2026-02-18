@@ -74,33 +74,34 @@ export default function DriverVehicleLinker() {
 
   async function vincular() {
     setMsg("");
-    if (!driverId) return setMsg("Selecione um motorista.");
-    if (!vehicleId) return setMsg("Selecione um veículo.");
+
+    if (!driverId) return setMsg("Selecione motorista");
+    if (!vehicleId) return setMsg("Selecione veículo");
 
     setBusy(true);
+
     try {
-      // ✅ Regra: 1 caminhão só pode ter 1 motorista
-      // Remove qualquer vínculo anterior desse caminhão
-      const { error: delVErr } = await supabase
-        .from("driver_vehicle")
-        .delete()
-        .eq("vehicle_id", vehicleId);
+      const resp = await fetch("/api/admin/link-driver", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          driver_id: driverId,
+          vehicle_id: vehicleId,
+        }),
+      });
 
-      if (delVErr) throw delVErr;
+      const j = await resp.json();
 
-      // ✅ Regra: 1 motorista só pode ter 1 caminhão (upsert por driver_id)
-      const { error: upErr } = await supabase
-        .from("driver_vehicle")
-        .upsert([{ driver_id: driverId, vehicle_id: vehicleId }], {
-          onConflict: "driver_id",
-        });
+      if (!resp.ok) {
+        throw new Error(j.error || "erro");
+      }
 
-      if (upErr) throw upErr;
-
-      setMsg("✅ Vínculo salvo!");
+      setMsg("✅ Vinculado com sucesso!");
       await loadAll();
     } catch (e) {
-      setMsg("Erro ao vincular: " + (e?.message || String(e)));
+      setMsg("Erro: " + e.message);
     } finally {
       setBusy(false);
     }

@@ -1,6 +1,7 @@
 // server.cjs
 const express = require("express");
 const path = require("path");
+const { createClient } = require("@supabase/supabase-js");
 
 // ---- fetch compat (Heroku/Node) ----
 // Node 18+ tem fetch global. Se não tiver, você pode instalar node-fetch@2.
@@ -290,4 +291,35 @@ app.use((req, res) => {
 
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
+});
+// =====================================
+// ADMIN: vincular motorista ao veículo
+// =====================================
+app.post("/api/admin/link-driver", async (req, res) => {
+  try {
+    const { driver_id, vehicle_id } = req.body;
+
+    if (!driver_id || !vehicle_id) {
+      return res
+        .status(400)
+        .json({ error: "driver_id e vehicle_id obrigatórios" });
+    }
+
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+    );
+
+    const { error } = await supabaseAdmin
+      .from("driver_vehicle")
+      .upsert([{ driver_id, vehicle_id }], { onConflict: "driver_id" });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
