@@ -74,34 +74,27 @@ export default function DriverVehicleLinker() {
 
   async function vincular() {
     setMsg("");
-
-    if (!driverId) return setMsg("Selecione motorista");
-    if (!vehicleId) return setMsg("Selecione veículo");
+    if (!driverId) return setMsg("Selecione um motorista.");
+    if (!vehicleId) return setMsg("Selecione um veículo.");
 
     setBusy(true);
-
     try {
       const resp = await fetch("/api/admin/link-driver", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          driver_id: driverId,
-          vehicle_id: vehicleId,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driver_id: driverId, vehicle_id: vehicleId }),
       });
 
-      const j = await resp.json();
+      const j = await resp.json().catch(() => null);
 
       if (!resp.ok) {
-        throw new Error(j.error || "erro");
+        throw new Error(j?.error || "Falha ao salvar vínculo");
       }
 
-      setMsg("✅ Vinculado com sucesso!");
+      setMsg("✅ Vínculo salvo!");
       await loadAll();
     } catch (e) {
-      setMsg("Erro: " + e.message);
+      setMsg("Erro ao vincular: " + (e?.message || String(e)));
     } finally {
       setBusy(false);
     }
