@@ -9,14 +9,16 @@ import { supabase } from "./supabase";
  */
 
 function wazeUrlFromLatLng(lat, lng) {
-  return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+  return `waze://?ll=${lat},${lng}&navigate=yes`;
 }
 
 function openInWazeFromStop(stop) {
   if (!stop) return;
   const url = wazeUrlFromLatLng(stop.lat, stop.lng);
-  // abre na mesma aba para evitar "aba branca"
-  window.location.assign(url);
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    window.location.href = url;
+  }
 }
 
 export default function DriverTracker() {
@@ -27,6 +29,8 @@ export default function DriverTracker() {
   const [status, setStatus] = useState("Parado");
   const [lastSent, setLastSent] = useState(null);
   const watchIdRef = useRef(null);
+  const pingIntervalRef = useRef(null);
+  const shouldTrackRef = useRef(false);
   const lastGpsSendAtRef = useRef(0);
 
   // ---- rota/paradas
@@ -89,6 +93,23 @@ export default function DriverTracker() {
   // 3) Para GPS quando sair da tela
   useEffect(() => {
     return () => stopTracking();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Retoma rastreio ao voltar para o app caso o motorista tenha deixado GPS ligado.
+  useEffect(() => {
+    function onVisible() {
+      if (!shouldTrackRef.current) return;
+      if (watchIdRef.current == null) startTracking();
+    }
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -210,6 +231,8 @@ export default function DriverTracker() {
   }
 
   function startTracking() {
+    shouldTrackRef.current = true;
+
     if (!navigator.geolocation) {
       setStatus("Geolocalização não suportada.");
       return;
@@ -241,12 +264,31 @@ export default function DriverTracker() {
     );
 
     watchIdRef.current = id;
+
+    if (pingIntervalRef.current == null) {
+      pingIntervalRef.current = setInterval(() => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, speed } = pos.coords;
+            sendLocation(latitude, longitude, speed);
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+        );
+      }, 5000);
+    }
   }
 
   function stopTracking() {
+    shouldTrackRef.current = false;
+
     if (watchIdRef.current != null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
+    }
+    if (pingIntervalRef.current != null) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
     setStatus("Parado");
   }
@@ -778,3 +820,5 @@ export default function DriverTracker() {
     </div>
   );
 }
+
+
