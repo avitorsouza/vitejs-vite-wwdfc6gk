@@ -199,6 +199,12 @@ export default function AdminMonitor() {
           routeId: r.id,
           vehicleLabel,
           coords,
+          stops: points.map((p) => ({
+            id: p.id,
+            lat: Number(p.lat),
+            lng: Number(p.lng),
+            stopOrder: p.stop_order,
+          })),
           color: colorForIndex(i),
         });
       }
@@ -589,6 +595,35 @@ export default function AdminMonitor() {
               </Popup>
             </Polyline>
           ))}
+
+          {/* Marcadores das paradas por rota */}
+          {activeRouteLines.flatMap((r) =>
+            (r.stops || []).map((s) => (
+              <Marker
+                key={`stop-${r.routeId}-${s.id}-${s.stopOrder ?? "x"}`}
+                position={[Number(s.lat), Number(s.lng)]}
+                icon={L.divIcon({
+                  className: "",
+                  html: `<div style="width:20px;height:20px;border-radius:999px;background:#fff;border:2px solid ${r.color};color:${r.color};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">${s.stopOrder ?? ""}</div>`,
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10],
+                  popupAnchor: [0, -10],
+                })}
+              >
+                <Popup>
+                  <div>
+                    <div style={{ fontWeight: 900 }}>Parada {s.stopOrder ?? "-"}</div>
+                    <div>
+                      <strong>VeÃ­culo:</strong> {r.vehicleLabel}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      <strong>Rota:</strong> {r.routeId}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            )),
+          )}
 
           {/* Marcadores dos motoristas */}
           {latestRows.map((r) => (
