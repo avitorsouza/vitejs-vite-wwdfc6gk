@@ -551,16 +551,10 @@ export default function AdminMonitor() {
 
   return (
     <div style={{ fontFamily: "Arial", padding: 16 }}>
-      <h2 style={{ margin: 0 }}>Monitor — Rotas ativas no mapa</h2>
-
-      {/* Resumo — Entregas por caminhão (rotas ativas) */}
-      <div style={{ marginTop: 12 }}>
-        <AdminRoutesSummary />
-      </div>
       {/* MAPA */}
       <div
         style={{
-          marginTop: 12,
+          marginTop: 0,
           height: 620,
           borderRadius: 12,
           overflow: "hidden",
@@ -626,13 +620,21 @@ export default function AdminMonitor() {
           ))}
         </MapContainer>
       </div>
+      <h2 style={{ marginTop: 12, marginBottom: 0 }}>
+        Monitor — Rotas ativas no mapa
+      </h2>
 
+      {/* Resumo — Entregas por caminhão (rotas ativas) */}
+      <div style={{ marginTop: 12 }}>
+        <AdminRoutesSummary />
+      </div>
       {routeLineMsg && (
         <div style={{ marginTop: 10, opacity: 0.85 }}>{routeLineMsg}</div>
       )}
     </div>
   );
 }
+
 
 
 
