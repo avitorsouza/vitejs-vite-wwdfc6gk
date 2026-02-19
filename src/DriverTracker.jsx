@@ -27,6 +27,7 @@ export default function DriverTracker() {
   const [status, setStatus] = useState("Parado");
   const [lastSent, setLastSent] = useState(null);
   const watchIdRef = useRef(null);
+  const lastGpsSendAtRef = useRef(0);
 
   // ---- rota/paradas
   const [stops, setStops] = useState([]);
@@ -185,6 +186,9 @@ export default function DriverTracker() {
   async function sendLocation(lat, lng, speed) {
     if (!user?.id) return;
 
+    const now = Date.now();
+    if (now - lastGpsSendAtRef.current < 5000) return;
+
     const { error } = await supabase.from("driver_locations").insert([
       {
         driver_id: user.id,
@@ -200,6 +204,7 @@ export default function DriverTracker() {
       return;
     }
 
+    lastGpsSendAtRef.current = now;
     setStatus("Rastreando...");
     setLastSent(new Date().toLocaleString());
   }
