@@ -14,7 +14,9 @@ export default function AdminOps() {
   const [geoFails, setGeoFails] = useState([]);
 
   const [vehicles, setVehicles] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [usedVehicleIds, setUsedVehicleIds] = useState(new Set());
+  const [usedDriverIds, setUsedDriverIds] = useState(new Set());
 
   const geocodedCount = useMemo(
     () =>
@@ -25,8 +27,9 @@ export default function AdminOps() {
 
   useEffect(() => {
     loadVehicles();
+    loadDrivers();
     refreshDeliveriesAvailable();
-    refreshUsedVehicles();
+    refreshUsedAssignments();
   }, []);
 
   async function loadVehicles() {
@@ -35,6 +38,15 @@ export default function AdminOps() {
       .select("id, name, plate")
       .order("name");
     setVehicles(data || []);
+  }
+
+  async function loadDrivers() {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .eq("role", "motorista")
+      .order("name");
+    setDrivers(data || []);
   }
 
   // Entregas disponíveis = pendentes + geocodificadas + ainda NÃO estão em rota
@@ -54,23 +66,25 @@ export default function AdminOps() {
   }
 
   // veículos já usados (já possuem rota ativa) -> trava seleção (regra 5)
-  async function refreshUsedVehicles() {
+  async function refreshUsedAssignments() {
     // início do dia (Manaus)
     const start = new Date();
     start.setHours(0, 0, 0, 0);
 
     const { data, error } = await supabase
       .from("routes")
-      .select("vehicle_id, created_at, status")
+      .select("vehicle_id, driver_id, created_at, status")
       .eq("status", "ativa")
       .gte("created_at", start.toISOString())
       .limit(200);
 
     if (!error) {
-      const setIds = new Set(
+      const vehicleIds = new Set(
         (data || []).map((x) => x.vehicle_id).filter(Boolean),
       );
-      setUsedVehicleIds(setIds);
+      const driverIds = new Set((data || []).map((x) => x.driver_id).filter(Boolean));
+      setUsedVehicleIds(vehicleIds);
+      setUsedDriverIds(driverIds);
     }
   }
 
@@ -297,7 +311,7 @@ export default function AdminOps() {
                   .update({ status: "encerrada" })
                   .eq("status", "ativa");
                 if (error) alert("Erro ao encerrar rotas: " + error.message);
-                await refreshUsedVehicles();
+                await refreshUsedAssignments();
               }}
               style={{
                 padding: "10px 12px",
@@ -311,11 +325,13 @@ export default function AdminOps() {
 
           <ManualRoutePlanner
             vehicles={vehicles}
+            drivers={drivers}
             usedVehicleIds={usedVehicleIds}
+            usedDriverIds={usedDriverIds}
             deliveries={deliveries}
             onAfterCreate={async () => {
               await refreshDeliveriesAvailable();
-              await refreshUsedVehicles();
+              await refreshUsedAssignments();
             }}
           />
         </Card>

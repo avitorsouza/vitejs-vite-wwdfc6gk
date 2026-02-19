@@ -3,11 +3,14 @@ import { supabase } from "./supabase";
 
 export default function ManualRoutePlanner({
   vehicles = [],
+  drivers = [],
   usedVehicleIds = new Set(),
+  usedDriverIds = new Set(),
   deliveries = [],
   onAfterCreate,
 }) {
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [selectedDriverId, setSelectedDriverId] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,6 +20,10 @@ export default function ManualRoutePlanner({
   const availableVehicles = useMemo(
     () => vehicles.filter((v) => !usedVehicleIds.has(v.id)),
     [vehicles, usedVehicleIds],
+  );
+  const availableDrivers = useMemo(
+    () => drivers.filter((d) => !usedDriverIds.has(d.id)),
+    [drivers, usedDriverIds],
   );
 
   const selectedCount = useMemo(() => selected.size, [selected]);
@@ -29,6 +36,13 @@ export default function ManualRoutePlanner({
       setSelectedVehicleId(availableVehicles?.[0]?.id || "");
     }
   }, [availableVehicles, selectedVehicleId]);
+
+  useEffect(() => {
+    const stillAvailable = availableDrivers.some((d) => d.id === selectedDriverId);
+    if (!selectedDriverId || !stillAvailable) {
+      setSelectedDriverId(availableDrivers?.[0]?.id || "");
+    }
+  }, [availableDrivers, selectedDriverId]);
 
   function toggle(id) {
     setOptimizedOrder(null);
@@ -90,6 +104,10 @@ export default function ManualRoutePlanner({
       setMsg("Nao ha caminhao disponivel.");
       return;
     }
+    if (!selectedDriverId) {
+      setMsg("Selecione um motorista.");
+      return;
+    }
     if (selected.size < 2) {
       setMsg("Selecione pelo menos 2 entregas para criar rota.");
       return;
@@ -97,15 +115,19 @@ export default function ManualRoutePlanner({
 
     setBusy(true);
     try {
-      const { data: link, error: linkErr } = await supabase
-        .from("driver_vehicle")
-        .select("driver_id")
-        .eq("vehicle_id", selectedVehicleId)
-        .maybeSingle();
-
-      if (linkErr || !link?.driver_id) {
+      const linkResp = await fetch("/api/admin/link-driver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          driver_id: selectedDriverId,
+          vehicle_id: selectedVehicleId,
+        }),
+      });
+      const linkJson = await linkResp.json().catch(() => null);
+      if (!linkResp.ok || !linkJson?.ok) {
         setMsg(
-          "Esse caminhao ainda nao tem motorista vinculado. Vincule antes de criar a rota.",
+          "Erro ao vincular motorista e caminhao: " +
+            (linkJson?.error || linkJson?.details || "desconhecido"),
         );
         return;
       }
@@ -123,7 +145,7 @@ export default function ManualRoutePlanner({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vehicle_id: selectedVehicleId,
-          driver_id: link.driver_id,
+          driver_id: selectedDriverId,
           depot_address: "AV. TEFE, 2840 - JAPIIM - MANAUS",
           delivery_ids: deliveryIds,
         }),
@@ -168,6 +190,27 @@ export default function ManualRoutePlanner({
           </div>
         )}
       </div>
+      <div>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>Motorista disponivel</div>
+        <select
+          value={selectedDriverId}
+          onChange={(e) => setSelectedDriverId(e.target.value)}
+          style={{ padding: 10, width: "100%", borderRadius: 12 }}
+          disabled={busy || availableDrivers.length === 0}
+        >
+          {availableDrivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name || d.id}
+            </option>
+          ))}
+        </select>
+
+        {availableDrivers.length === 0 && (
+          <div style={{ marginTop: 8, opacity: 0.85 }}>
+            Todos os motoristas ja possuem rota ativa.
+          </div>
+        )}
+      </div>
 
       <div
         style={{
@@ -179,7 +222,7 @@ export default function ManualRoutePlanner({
       >
         <button
           onClick={criarRotaManual}
-          disabled={busy || !selectedVehicleId}
+          disabled={busy || !selectedVehicleId || !selectedDriverId}
           style={{ padding: "12px 12px", borderRadius: 12, fontWeight: 900 }}
         >
           {busy ? "Criando..." : `Criar rota (${selectedCount})`}

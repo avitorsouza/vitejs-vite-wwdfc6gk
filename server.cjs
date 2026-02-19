@@ -17,15 +17,28 @@ app.use(express.json({ limit: "2mb" }));
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+const hasSupabaseAdminConfig =
+  Boolean(SUPABASE_URL) && Boolean(SUPABASE_SERVICE_ROLE_KEY);
+
+if (!hasSupabaseAdminConfig) {
   console.warn(
     "⚠️ Falta SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nas Config Vars.",
   );
 }
 
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+const supabaseAdmin = hasSupabaseAdminConfig
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    })
+  : null;
+
+function ensureSupabaseAdmin(res) {
+  if (supabaseAdmin) return true;
+  res.status(500).json({
+    error: "SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao configurada no servidor",
+  });
+  return false;
+}
 
 // =========================================================
 // API: HEALTH
@@ -41,6 +54,8 @@ app.get("/api/health", (req, res) => {
 // =========================================================
 app.post("/api/admin/link-driver", async (req, res) => {
   try {
+    if (!ensureSupabaseAdmin(res)) return;
+
     const { driver_id, vehicle_id } = req.body || {};
 
     if (!driver_id) {
@@ -325,6 +340,8 @@ app.post("/api/route", async (req, res) => {
 // =========================================================
 app.post("/api/routes/create", async (req, res) => {
   try {
+    if (!ensureSupabaseAdmin(res)) return;
+
     const { vehicle_id, driver_id, depot_address, delivery_ids } =
       req.body || {};
 
@@ -404,6 +421,8 @@ app.post("/api/routes/create", async (req, res) => {
 // =========================================================
 app.post("/api/routes/:routeId/optimize", async (req, res) => {
   try {
+    if (!ensureSupabaseAdmin(res)) return;
+
     const routeId = req.params.routeId;
 
     // 1) pega rota
