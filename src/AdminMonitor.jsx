@@ -7,6 +7,7 @@ import {
   Popup,
   Polyline,
 } from "react-leaflet";
+import L from "leaflet";
 import { supabase } from "./supabase";
 
 function toFiniteNumber(v) {
@@ -345,30 +346,58 @@ export default function AdminMonitor() {
     const cached = vehicleCacheRef.current.get(driverId);
     if (cached) return cached;
 
-    const { data: link, error: linkErr } = await supabase
+    const { data: links, error: linkErr } = await supabase
       .from("driver_vehicle")
       .select("vehicle_id")
       .eq("driver_id", driverId)
-      .single();
+      .limit(1);
 
-    if (linkErr || !link?.vehicle_id) {
-      const fallback = "—";
-      vehicleCacheRef.current.set(driverId, fallback);
-      return fallback;
+    const vehicleId = links?.[0]?.vehicle_id || null;
+    let label = "—";
+
+    if (vehicleId) {
+      const { data: v, error: vErr } = await supabase
+        .from("vehicles")
+        .select("name, plate")
+        .eq("id", vehicleId)
+        .maybeSingle();
+
+      if (!vErr && v) {
+        label = `${v.name} - ${v.plate}`;
+      }
     }
 
-    const { data: v, error: vErr } = await supabase
-      .from("vehicles")
-      .select("name, plate")
-      .eq("id", link.vehicle_id)
-      .single();
+    if (label === "—" || linkErr) {
+      const { data: activeRoute, error: routeErr } = await supabase
+        .from("routes")
+        .select("vehicle_id, vehicles:vehicle_id(name, plate)")
+        .eq("driver_id", driverId)
+        .eq("status", "ativa")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    const label = !vErr && v ? `${v.name} — ${v.plate}` : "—";
+      if (!routeErr && activeRoute?.vehicles) {
+        label = `${activeRoute.vehicles.name} - ${activeRoute.vehicles.plate}`;
+      }
+    }
+
     vehicleCacheRef.current.set(driverId, label);
     return label;
   }
 
   const center = useMemo(() => [-3.119, -60.0217], []);
+  const truckIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: "",
+        html: `<div style="font-size: 24px; line-height: 24px;">🚚</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -12],
+      }),
+    [],
+  );
 
   useEffect(() => {
     let channelLoc;
@@ -569,7 +598,11 @@ export default function AdminMonitor() {
 
           {/* Marcadores dos motoristas */}
           {latestRows.map((r) => (
-            <Marker key={r.driver_id} position={[Number(r.lat), Number(r.lng)]}>
+            <Marker
+              key={r.driver_id}
+              position={[Number(r.lat), Number(r.lng)]}
+              icon={truckIcon}
+            >
               <Popup>
                 <div>
                   <div>
@@ -600,3 +633,8 @@ export default function AdminMonitor() {
     </div>
   );
 }
+
+
+
+
+
