@@ -196,9 +196,11 @@ export default function DriverTracker() {
 
     if (error) {
       console.warn("Erro enviando local:", error.message);
+      setStatus("Erro ao enviar localizaÃ§Ã£o: " + error.message);
       return;
     }
 
+    setStatus("Rastreando...");
     setLastSent(new Date().toLocaleString());
   }
 

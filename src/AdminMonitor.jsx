@@ -9,6 +9,19 @@ import {
 } from "react-leaflet";
 import { supabase } from "./supabase";
 
+function toFiniteNumber(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeLocationRow(row) {
+  if (!row) return null;
+  const lat = toFiniteNumber(row.lat);
+  const lng = toFiniteNumber(row.lng);
+  if (lat == null || lng == null) return null;
+  return { ...row, lat, lng };
+}
+
 function groupLatestByDriver(rows) {
   const map = new Map();
   for (const r of rows) {
@@ -375,7 +388,8 @@ export default function AdminMonitor() {
         return;
       }
 
-      const latest = groupLatestByDriver(data || []);
+      const normalized = (data || []).map(normalizeLocationRow).filter(Boolean);
+      const latest = groupLatestByDriver(normalized);
       setLatestRows(latest);
 
       for (const row of latest) {
@@ -403,7 +417,8 @@ export default function AdminMonitor() {
           "postgres_changes",
           { event: "*", schema: "public", table: "deliveries" },
           (payload) => {
-            const row = payload.new;
+            const row = normalizeLocationRow(payload.new);
+            if (!row) return;
             setDeliveries((prev) => {
               const idx = prev.findIndex((d) => d.id === row.id);
               if (idx !== -1) {
@@ -525,7 +540,7 @@ export default function AdminMonitor() {
 
           {/* Marcadores dos motoristas */}
           {latestRows.map((r) => (
-            <Marker key={r.driver_id} position={[r.lat, r.lng]}>
+            <Marker key={r.driver_id} position={[Number(r.lat), Number(r.lng)]}>
               <Popup>
                 <div>
                   <div>
