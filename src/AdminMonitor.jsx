@@ -373,6 +373,7 @@ export default function AdminMonitor() {
   useEffect(() => {
     let channelLoc;
     let channelDel;
+    let locPollTimer;
 
     async function init() {
       setStatus("Buscando últimas posições...");
@@ -417,8 +418,7 @@ export default function AdminMonitor() {
           "postgres_changes",
           { event: "*", schema: "public", table: "deliveries" },
           (payload) => {
-            const row = normalizeLocationRow(payload.new);
-            if (!row) return;
+            const row = payload.new;
             setDeliveries((prev) => {
               const idx = prev.findIndex((d) => d.id === row.id);
               if (idx !== -1) {
@@ -450,7 +450,8 @@ export default function AdminMonitor() {
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "driver_locations" },
           (payload) => {
-            const row = payload.new;
+            const row = normalizeLocationRow(payload.new);
+            if (!row) return;
 
             getDriverVehicleLabel(row.driver_id).then((label) => {
               setDriverVehicles((prev) => ({
@@ -481,6 +482,34 @@ export default function AdminMonitor() {
       if (channelLoc) supabase.removeChannel(channelLoc);
       if (channelDel) supabase.removeChannel(channelDel);
     };
+  }, []);
+
+  // fallback de atualizacao quando realtime falhar
+  useEffect(() => {
+    const t = setInterval(async () => {
+      const { data, error } = await supabase
+        .from("driver_locations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (error) return;
+
+      const normalized = (data || []).map(normalizeLocationRow).filter(Boolean);
+      const latest = groupLatestByDriver(normalized);
+      setLatestRows(latest);
+
+      for (const row of latest) {
+        getDriverVehicleLabel(row.driver_id).then((label) => {
+          setDriverVehicles((prev) => ({ ...prev, [row.driver_id]: label }));
+        });
+        getDriverName(row.driver_id).then((name) => {
+          setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
+        });
+      }
+    }, 10000);
+
+    return () => clearInterval(t);
   }, []);
 
   // desenhar rotas ativas automaticamente

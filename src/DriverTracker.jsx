@@ -216,6 +216,16 @@ export default function DriverTracker() {
     }
 
     setStatus("Rastreando...");
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, speed } = pos.coords;
+        sendLocation(latitude, longitude, speed);
+      },
+      (err) => setStatus("Erro GPS: " + err.message),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    );
+
     const id = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, speed } = pos.coords;
