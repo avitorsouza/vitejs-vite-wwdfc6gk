@@ -12,6 +12,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
     "@mapbox/polyline": "^1.2.1",
     "@supabase/supabase-js": "^2.97.0",
     "express": "^5.2.1",

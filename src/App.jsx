@@ -3,6 +3,8 @@ import { supabase } from "./supabase";
 import DriverTracker from "./DriverTracker";
 import AdminHome from "./AdminHome";
 
+const DRIVER_ONLY = import.meta.env.VITE_DRIVER_ONLY === "true";
+
 function Login({ onLogged }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -90,6 +92,7 @@ export default function App() {
 
   if (!user) return <Login onLogged={setUser} />;
   if (!role) return <div style={{ padding: 16 }}>Carregando perfil...</div>;
+  if (DRIVER_ONLY) return <DriverTracker />;
 
   return role === "admin" ? <AdminHome /> : <DriverTracker />;
 }
