@@ -10,6 +10,68 @@ import {
 import L from "leaflet";
 import { supabase } from "./supabase";
 
+function AnimatedLiveDriverMarker({ row, icon, children, durationMs = 4200 }) {
+  const markerRef = useRef(null);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    const nextLat = Number(row.lat);
+    const nextLng = Number(row.lng);
+    if (!marker || !Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
+
+    if (frameRef.current != null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
+    const from = marker.getLatLng();
+    const to = { lat: nextLat, lng: nextLng };
+    const dLat = Math.abs(from.lat - to.lat);
+    const dLng = Math.abs(from.lng - to.lng);
+
+    if (dLat < 1e-9 && dLng < 1e-9) {
+      marker.setLatLng([to.lat, to.lng]);
+      return;
+    }
+
+    const startAt = performance.now();
+    const step = (now) => {
+      const raw = Math.min((now - startAt) / durationMs, 1);
+      const eased = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
+      const lat = from.lat + (to.lat - from.lat) * eased;
+      const lng = from.lng + (to.lng - from.lng) * eased;
+      marker.setLatLng([lat, lng]);
+
+      if (raw < 1) {
+        frameRef.current = requestAnimationFrame(step);
+      } else {
+        frameRef.current = null;
+      }
+    };
+
+    frameRef.current = requestAnimationFrame(step);
+  }, [row.lat, row.lng, durationMs]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[Number(row.lat), Number(row.lng)]}
+      icon={icon}
+    >
+      {children}
+    </Marker>
+  );
+}
+
 function toFiniteNumber(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -408,7 +470,6 @@ export default function AdminMonitor() {
   useEffect(() => {
     let channelLoc;
     let channelDel;
-    let locPollTimer;
 
     async function init() {
       setStatus("Buscando últimas posições...");
@@ -542,7 +603,7 @@ export default function AdminMonitor() {
           setDriverNames((prev) => ({ ...prev, [row.driver_id]: name }));
         });
       }
-    }, 10000);
+    }, 5000);
 
     return () => clearInterval(t);
   }, []);
@@ -627,9 +688,9 @@ export default function AdminMonitor() {
 
           {/* Marcadores dos motoristas */}
           {latestRows.map((r) => (
-            <Marker
+            <AnimatedLiveDriverMarker
               key={r.driver_id}
-              position={[Number(r.lat), Number(r.lng)]}
+              row={r}
               icon={truckIcon}
             >
               <Popup>
@@ -651,7 +712,7 @@ export default function AdminMonitor() {
                   </div>
                 </div>
               </Popup>
-            </Marker>
+            </AnimatedLiveDriverMarker>
           ))}
         </MapContainer>
       </div>
