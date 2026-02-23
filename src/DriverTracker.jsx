@@ -1,23 +1,50 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { Capacitor, CapacitorHttp, registerPlugin } from "@capacitor/core";
+import { AppLauncher } from "@capacitor/app-launcher";
+import { LocalNotifications } from "@capacitor/local-notifications";
+
+const BackgroundGeolocation = registerPlugin("BackgroundGeolocation");
+const TRACKING_ENABLED_KEY = "driver_tracker_tracking_enabled";
+
 
 /**
  * DriverTracker.jsx
- * - Tela principal: entrega atual + ações + lista do dia
- * - Tela exclusiva: concluir entrega (entregue => foto obrigatória | não entregue => justificativa obrigatória)
- * - Após enviar: volta pra principal, recarrega e abre Waze da próxima
+ * - Tela principal: entrega atual + aÃ§Ãµes + lista do dia
+ * - Tela exclusiva: concluir entrega (entregue => foto obrigatÃ³ria | nÃ£o entregue => justificativa obrigatÃ³ria)
+ * - ApÃ³s enviar: volta pra principal, recarrega e abre Waze da prÃ³xima
  */
 
 function wazeUrlFromLatLng(lat, lng) {
   return `waze://?ll=${lat},${lng}&navigate=yes`;
 }
 
-function openInWazeFromStop(stop) {
+function wazeWebUrlFromLatLng(lat, lng) {
+  return `https://www.waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+}
+
+async function openInWazeFromStop(stop) {
   if (!stop) return;
-  const url = wazeUrlFromLatLng(stop.lat, stop.lng);
-  const opened = window.open(url, "_blank");
+  const deepLink = wazeUrlFromLatLng(stop.lat, stop.lng);
+  const webLink = wazeWebUrlFromLatLng(stop.lat, stop.lng);
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const canOpen = await AppLauncher.canOpenUrl({ url: "waze://" });
+      if (canOpen?.value) {
+        await AppLauncher.openUrl({ url: deepLink });
+        return;
+      }
+      await AppLauncher.openUrl({ url: webLink });
+      return;
+    } catch (e) {
+      // fallback below
+    }
+  }
+
+  const opened = window.open(deepLink, "_blank");
   if (!opened) {
-    window.location.href = url;
+    window.location.href = webLink;
   }
 }
 
@@ -29,25 +56,28 @@ export default function DriverTracker() {
   const [status, setStatus] = useState("Parado");
   const [lastSent, setLastSent] = useState(null);
   const watchIdRef = useRef(null);
+  const bgWatcherIdRef = useRef(null);
   const pingIntervalRef = useRef(null);
   const shouldTrackRef = useRef(false);
   const lastGpsSendAtRef = useRef(0);
+  const driverIdRef = useRef(null);
+  const accessTokenRef = useRef(null);
 
   // ---- rota/paradas
   const [stops, setStops] = useState([]);
   const [currentStop, setCurrentStop] = useState(null);
   const [stopsMsg, setStopsMsg] = useState("Carregando entregas...");
 
-  // ---- tela exclusiva de conclusão
+  // ---- tela exclusiva de conclusÃ£o
   const [showFinish, setShowFinish] = useState(false);
   const [deliveryStatus, setDeliveryStatus] = useState("entregue"); // entregue | nao_realizada
   const [selectedFile, setSelectedFile] = useState(null);
   const [justificativa, setJustificativa] = useState("");
   const [uploadMsg, setUploadMsg] = useState("");
 
-  const centerName = useMemo(() => "Motorista — Rota do Dia", []);
+  const centerName = useMemo(() => "Motorista â€” Rota do Dia", []);
 
-  // 1) Carregar usuário logado
+  // 1) Carregar usuÃ¡rio logado
   useEffect(() => {
     let alive = true;
 
@@ -56,7 +86,7 @@ export default function DriverTracker() {
 
       if (error) {
         setUser(null);
-        setStopsMsg("Erro ao carregar usuário: " + error.message);
+        setStopsMsg("Erro ao carregar usuÃ¡rio: " + error.message);
         return;
       }
 
@@ -70,8 +100,9 @@ export default function DriverTracker() {
 
   // 2) Carregar paradas ao ter user
   useEffect(() => {
+    driverIdRef.current = user?.id || null;
     if (!user?.id) {
-      setStopsMsg("Carregando usuário...");
+      setStopsMsg("Carregando usuÃ¡rio...");
       return;
     }
     loadStops();
@@ -90,9 +121,13 @@ export default function DriverTracker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, showFinish]);
 
-  // 3) Para GPS quando sair da tela
+  // 3) Retoma automaticamente se o motorista havia deixado o GPS ativo.
   useEffect(() => {
-    return () => stopTracking();
+    const trackingWasEnabled =
+      localStorage.getItem(TRACKING_ENABLED_KEY) === "1";
+    if (!trackingWasEnabled) return;
+    shouldTrackRef.current = true;
+    startTracking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -100,7 +135,9 @@ export default function DriverTracker() {
   useEffect(() => {
     function onVisible() {
       if (!shouldTrackRef.current) return;
-      if (watchIdRef.current == null) startTracking();
+      const hasNativeWatcher = bgWatcherIdRef.current != null;
+      const hasWebWatcher = watchIdRef.current != null;
+      if (!hasNativeWatcher && !hasWebWatcher) startTracking();
     }
 
     document.addEventListener("visibilitychange", onVisible);
@@ -113,13 +150,18 @@ export default function DriverTracker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 4) Ao logar novamente, atualiza token para envio nativo em background.
+  useEffect(() => {
+    accessTokenRef.current = null;
+  }, [user?.id]);
+
   async function loadStops() {
     await reloadStops();
   }
 
   async function reloadStops() {
     if (!user?.id) {
-      setStopsMsg("Carregando usuário...");
+      setStopsMsg("Carregando usuÃ¡rio...");
       setStops([]);
       setCurrentStop(null);
       return null;
@@ -127,7 +169,7 @@ export default function DriverTracker() {
 
     setStopsMsg("Carregando entregas...");
 
-    // 1) descobrir veículo do motorista logado
+    // 1) descobrir veÃ­culo do motorista logado
     const { data: link, error: linkErr } = await supabase
       .from("driver_vehicle")
       .select("vehicle_id")
@@ -135,7 +177,7 @@ export default function DriverTracker() {
       .single();
 
     if (linkErr || !link?.vehicle_id) {
-      setStopsMsg("Seu usuário não está vinculado a um veículo.");
+      setStopsMsg("Seu usuÃ¡rio nÃ£o estÃ¡ vinculado a um veÃ­culo.");
       setStops([]);
       setCurrentStop(null);
       return null;
@@ -152,7 +194,7 @@ export default function DriverTracker() {
       .maybeSingle();
 
     if (rErr || !r?.id) {
-      setStopsMsg("Nenhuma rota ativa encontrada para seu veículo.");
+      setStopsMsg("Nenhuma rota ativa encontrada para seu veÃ­culo.");
       setStops([]);
       setCurrentStop(null);
       return null;
@@ -197,7 +239,7 @@ export default function DriverTracker() {
       );
 
     setStops(stopsList);
-    setStopsMsg(stopsList.length ? "" : "Nenhuma entrega em rota para você.");
+    setStopsMsg(stopsList.length ? "" : "Nenhuma entrega em rota para vocÃª.");
     const next = stopsList[0] || null;
     setCurrentStop(next);
     return next;
@@ -205,24 +247,61 @@ export default function DriverTracker() {
 
   // ---- GPS
   async function sendLocation(lat, lng, speed) {
-    if (!user?.id) return;
+    const driverId = driverIdRef.current || user?.id || null;
+    if (!driverId) return;
 
     const now = Date.now();
     if (now - lastGpsSendAtRef.current < 5000) return;
 
-    const { error } = await supabase.from("driver_locations").insert([
-      {
-        driver_id: user.id,
-        lat,
-        lng,
-        speed: Number.isFinite(speed) ? speed : null,
-      },
-    ]);
+    const row = {
+      driver_id: driverId,
+      lat,
+      lng,
+      speed: Number.isFinite(speed) ? speed : null,
+    };
 
-    if (error) {
-      console.warn("Erro enviando local:", error.message);
-      setStatus("Erro ao enviar localizaÃ§Ã£o: " + error.message);
-      return;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        let accessToken = accessTokenRef.current;
+        if (!accessToken) {
+          const { data: sess } = await supabase.auth.getSession();
+          accessToken = sess?.session?.access_token || null;
+          accessTokenRef.current = accessToken;
+        }
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        if (!accessToken || !supabaseUrl || !supabaseAnonKey) {
+          setStatus("Erro ao enviar localizacao: sessao/config ausente");
+          return;
+        }
+
+        const resp = await CapacitorHttp.post({
+          url: `${supabaseUrl}/rest/v1/driver_locations`,
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          data: [row],
+        });
+
+        if (!resp || resp.status < 200 || resp.status >= 300) {
+          setStatus("Erro ao enviar localizacao: HTTP " + (resp?.status ?? "?"));
+          return;
+        }
+      } catch (e) {
+        setStatus("Erro ao enviar localizacao: " + String(e?.message || e));
+        return;
+      }
+    } else {
+      const { error } = await supabase.from("driver_locations").insert([row]);
+      if (error) {
+        console.warn("Erro enviando local:", error.message);
+        setStatus("Erro ao enviar localizacao: " + error.message);
+        return;
+      }
     }
 
     lastGpsSendAtRef.current = now;
@@ -230,20 +309,88 @@ export default function DriverTracker() {
     setLastSent(new Date().toLocaleString());
   }
 
-  function startTracking() {
+  async function startTracking() {
     shouldTrackRef.current = true;
+    localStorage.setItem(TRACKING_ENABLED_KEY, "1");
 
     if (!navigator.geolocation) {
-      setStatus("Geolocalização não suportada.");
+      setStatus("GeolocalizaÃ§Ã£o nÃ£o suportada.");
       return;
     }
 
-    if (watchIdRef.current != null) {
-      setStatus("GPS já está ativo.");
+    if (Capacitor.isNativePlatform() && bgWatcherIdRef.current != null) {
+      setStatus("GPS jÃ¡ estÃ¡ ativo.");
+      return;
+    }
+
+    if (!Capacitor.isNativePlatform() && watchIdRef.current != null) {
+      setStatus("GPS jÃ¡ estÃ¡ ativo.");
       return;
     }
 
     setStatus("Rastreando...");
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        accessTokenRef.current = sess?.session?.access_token || null;
+      } catch {
+        accessTokenRef.current = null;
+      }
+
+      try {
+        const notifPerm = await LocalNotifications.checkPermissions();
+        if (notifPerm.display !== "granted") {
+          await LocalNotifications.requestPermissions();
+        }
+      } catch {
+        // keep tracking flow even if notification permission check fails
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude, speed } = pos.coords;
+          sendLocation(latitude, longitude, speed);
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+      );
+
+      BackgroundGeolocation.addWatcher(
+        {
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 0,
+          backgroundTitle: "Rastreio ativo",
+          backgroundMessage: "Enviando localizacao da rota em segundo plano",
+        },
+        (location, error) => {
+          if (error) {
+            const raw =
+              (error?.message || error?.code || "permissao negada").toString();
+            const isAuthError = raw.includes("NOT_AUTHORIZED");
+            setStatus(
+              isAuthError
+                ? "Erro GPS: permissao em segundo plano negada. Ative localizacao 'o tempo todo' no Android."
+                : "Erro GPS: " + raw,
+            );
+            return;
+          }
+          if (!location) return;
+
+          sendLocation(location.latitude, location.longitude, location.speed);
+        },
+      )
+        .then((watcherId) => {
+          bgWatcherIdRef.current = watcherId;
+          setStatus("Rastreando (segundo plano)...");
+        })
+        .catch((e) => {
+          setStatus("Erro GPS: " + String(e?.message || e));
+        });
+
+      return;
+    }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -281,6 +428,13 @@ export default function DriverTracker() {
 
   function stopTracking() {
     shouldTrackRef.current = false;
+    localStorage.removeItem(TRACKING_ENABLED_KEY);
+
+    if (bgWatcherIdRef.current != null) {
+      const watcherId = bgWatcherIdRef.current;
+      bgWatcherIdRef.current = null;
+      BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => {});
+    }
 
     if (watchIdRef.current != null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
@@ -293,7 +447,7 @@ export default function DriverTracker() {
     setStatus("Parado");
   }
 
-  // ---- Conclusão (tela exclusiva)
+  // ---- ConclusÃ£o (tela exclusiva)
   async function enviarFotoEStatus() {
     try {
       setUploadMsg("");
@@ -303,11 +457,11 @@ export default function DriverTracker() {
         return false;
       }
 
-      // ✅ Regras obrigatórias
+      // âœ… Regras obrigatÃ³rias
       if (deliveryStatus === "entregue") {
         if (!selectedFile) {
           setUploadMsg(
-            "Para marcar como ENTREGUE, é obrigatório anexar a foto.",
+            "Para marcar como ENTREGUE, Ã© obrigatÃ³rio anexar a foto.",
           );
           return false;
         }
@@ -316,14 +470,14 @@ export default function DriverTracker() {
       if (deliveryStatus === "nao_realizada") {
         if (!justificativa?.trim()) {
           setUploadMsg(
-            "Para marcar como NÃO ENTREGUE, é obrigatório informar a justificativa.",
+            "Para marcar como NÃƒO ENTREGUE, Ã© obrigatÃ³rio informar a justificativa.",
           );
           return false;
         }
       }
 
       // =========================
-      // CASO 1: ENTREGUE → sobe foto e salva photo_url
+      // CASO 1: ENTREGUE â†’ sobe foto e salva photo_url
       // =========================
       if (deliveryStatus === "entregue") {
         const BUCKET =
@@ -358,14 +512,14 @@ export default function DriverTracker() {
           return false;
         }
 
-        setUploadMsg("✅ Entrega concluída com foto!");
+        setUploadMsg("âœ… Entrega concluÃ­da com foto!");
         setSelectedFile(null);
         setJustificativa("");
         return true;
       }
 
       // =========================
-      // CASO 2: NÃO ENTREGUE → salva justificativa e NÃO sobe foto
+      // CASO 2: NÃƒO ENTREGUE â†’ salva justificativa e NÃƒO sobe foto
       // =========================
       if (deliveryStatus === "nao_realizada") {
         const { error: updErr } = await supabase
@@ -383,13 +537,13 @@ export default function DriverTracker() {
           return false;
         }
 
-        setUploadMsg("✅ Marcado como NÃO ENTREGUE (com justificativa).");
+        setUploadMsg("âœ… Marcado como NÃƒO ENTREGUE (com justificativa).");
         setSelectedFile(null);
         setJustificativa("");
         return true;
       }
 
-      setUploadMsg("Status inválido.");
+      setUploadMsg("Status invÃ¡lido.");
       return false;
     } catch (e) {
       setUploadMsg("Erro inesperado: " + String(e?.message || e));
@@ -435,14 +589,14 @@ export default function DriverTracker() {
               </div>
               <div style={{ display: "grid", gap: 6 }}>
                 <div>
-                  <strong>Pedido:</strong> {currentStop.pedido ?? "—"}
+                  <strong>Pedido:</strong> {currentStop.pedido ?? "â€”"}
                 </div>
                 <div>
-                  <strong>Cliente:</strong> {currentStop.cliente ?? "—"}
+                  <strong>Cliente:</strong> {currentStop.cliente ?? "â€”"}
                 </div>
                 <div>
-                  <strong>Endereço:</strong>{" "}
-                  {currentStop.endereco_completo ?? "—"}
+                  <strong>EndereÃ§o:</strong>{" "}
+                  {currentStop.endereco_completo ?? "â€”"}
                 </div>
               </div>
             </>
@@ -485,17 +639,17 @@ export default function DriverTracker() {
             }}
           >
             <option value="entregue">Entregue</option>
-            <option value="nao_realizada">Não entregue</option>
+            <option value="nao_realizada">NÃ£o entregue</option>
           </select>
 
           {/* =========================
-              ENTREGUE → FOTO + BOTÃO
+              ENTREGUE â†’ FOTO + BOTÃƒO
              ========================= */}
           {deliveryStatus === "entregue" && (
             <div style={{ display: "grid", gap: 10 }}>
               <div>
                 <label style={{ display: "block", marginBottom: 6 }}>
-                  Foto do recebimento (obrigatório):
+                  Foto do recebimento (obrigatÃ³rio):
                 </label>
                 <input
                   type="file"
@@ -529,16 +683,16 @@ export default function DriverTracker() {
           )}
 
           {/* =========================
-              NÃO ENTREGUE → TEXTO + BOTÃO
+              NÃƒO ENTREGUE â†’ TEXTO + BOTÃƒO
              ========================= */}
           {deliveryStatus === "nao_realizada" && (
             <div style={{ display: "grid", gap: 10 }}>
               <div>
                 <label style={{ display: "block", marginBottom: 6 }}>
-                  Justificativa (obrigatório):
+                  Justificativa (obrigatÃ³rio):
                 </label>
                 <textarea
-                  placeholder="Informe o motivo da não entrega..."
+                  placeholder="Informe o motivo da nÃ£o entrega..."
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
                   style={{
@@ -628,7 +782,7 @@ export default function DriverTracker() {
             <strong>Status GPS:</strong> {status}
           </div>
           <div>
-            <strong>Último envio:</strong> {lastSent ?? "—"}
+            <strong>Ãšltimo envio:</strong> {lastSent ?? "â€”"}
           </div>
 
           {stopsMsg && (
@@ -649,7 +803,7 @@ export default function DriverTracker() {
           gap: 12,
         }}
       >
-        {/* AÇÕES */}
+        {/* AÃ‡Ã•ES */}
         <div
           style={{
             border: "1px solid #e5e7eb",
@@ -659,7 +813,7 @@ export default function DriverTracker() {
             boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
           }}
         >
-          <div style={{ fontWeight: 900, marginBottom: 10 }}>Ações</div>
+          <div style={{ fontWeight: 900, marginBottom: 10 }}>AÃ§Ãµes</div>
 
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
@@ -755,24 +909,24 @@ export default function DriverTracker() {
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ opacity: 0.8 }}>
                 {currentStop.stop_order != null
-                  ? `Parada #${currentStop.stop_order} • Restantes: ${stops.length}`
+                  ? `Parada #${currentStop.stop_order} â€¢ Restantes: ${stops.length}`
                   : `Restantes: ${stops.length}`}
               </div>
               <div>
-                <strong>Pedido:</strong> {currentStop.pedido ?? "—"}
+                <strong>Pedido:</strong> {currentStop.pedido ?? "â€”"}
               </div>
               <div>
-                <strong>Cliente:</strong> {currentStop.cliente ?? "—"}
+                <strong>Cliente:</strong> {currentStop.cliente ?? "â€”"}
               </div>
               <div>
-                <strong>Endereço:</strong>{" "}
-                {currentStop.endereco_completo ?? "—"}
+                <strong>EndereÃ§o:</strong>{" "}
+                {currentStop.endereco_completo ?? "â€”"}
               </div>
             </div>
           )}
         </div>
 
-        {/* ENTREGAS DO DIA (SEM BOTÃO WAZE) */}
+        {/* ENTREGAS DO DIA (SEM BOTÃƒO WAZE) */}
         <div
           style={{
             border: "1px solid #e5e7eb",
@@ -803,13 +957,13 @@ export default function DriverTracker() {
                 >
                   <div style={{ fontWeight: 900 }}>Parada {idx + 1}</div>
                   <div>
-                    <strong>Pedido:</strong> {s.pedido ?? "—"}
+                    <strong>Pedido:</strong> {s.pedido ?? "â€”"}
                   </div>
                   <div>
-                    <strong>Cliente:</strong> {s.cliente ?? "—"}
+                    <strong>Cliente:</strong> {s.cliente ?? "â€”"}
                   </div>
                   <div>
-                    <strong>Endereço:</strong> {s.endereco_completo ?? "—"}
+                    <strong>EndereÃ§o:</strong> {s.endereco_completo ?? "â€”"}
                   </div>
                 </div>
               ))}
@@ -820,5 +974,11 @@ export default function DriverTracker() {
     </div>
   );
 }
+
+
+
+
+
+
 
 
